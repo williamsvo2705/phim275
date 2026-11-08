@@ -61,6 +61,7 @@ import phim275.tv.com.cursor.CursorController
 import phim275.tv.com.cursor.CursorView
 import phim275.tv.com.data.AppSettings
 import phim275.tv.com.data.AppSettings.NavMode
+import phim275.tv.com.data.DeviceProfile
 import phim275.tv.com.data.LinkStore
 import phim275.tv.com.data.SavedSession
 import phim275.tv.com.data.SavedTab
@@ -197,9 +198,9 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         cursor = CursorController(cursorView, this)
 
         runtime = BrowserRuntime.get(this)
-        val totalRam = android.app.ActivityManager.MemoryInfo()
-            .also { getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(it) }.totalMem
-        tabs = TabManager(runtime, geckoView, ::configureSession, this, TabPolicy.maxLiveTabsFor(totalRam))
+        val lowRam = BrowserRuntime.isLowRam
+        val maxLive = if (lowRam) 1 else TabPolicy.maxLiveTabsFor(DeviceProfile.totalRamBytes(this))
+        tabs = TabManager(runtime, geckoView, ::configureSession, this, maxLive, TabPolicy.maxTabsFor(lowRam))
         setupToolbar()
         applyNavMode()
         BrowserRuntime.observeUblock(ublockObserver)
@@ -853,7 +854,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             items += MenuItem(mark + tab.label().take(70)) { showTabActions(tab) }
         }
         if (tabs.tabs.size > 1) items += MenuItem("✖ Đóng các tab khác") { tabs.closeOthers() }
-        showMenu("Tab đang mở · tối đa ${TabPolicy.MAX_TABS}", items)
+        showMenu("Tab đang mở · tối đa ${tabs.maxTabs}", items)
     }
 
     private fun showTabActions(tab: BrowserTab) {
@@ -950,6 +951,20 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                     showToast(if (ok) "Đang tải bộ lọc mới trong nền…" else getString(R.string.ublock_loading))
                 }
             },
+            MenuItem("Chế độ RAM thấp (box 1GB): ${settings.lowRamMode.label}${if (BrowserRuntime.isLowRam) " · đang BẬT" else ""}") {
+                showChoice("Chế độ RAM thấp", DeviceProfile.LowRamMode.entries, settings.lowRamMode, { it.label }) { mode ->
+                    settings.lowRamMode = mode
+                    val wanted = DeviceProfile.isLowRam(this)
+                    UblockBridge.lowMemoryLists = wanted // bộ lọc gọn áp dụng ngay
+                    if (wanted != BrowserRuntime.isLowRam) {
+                        showConfirm(
+                            "Khởi động lại Phim275?",
+                            "Cần mở lại app để áp dụng đầy đủ chế độ RAM thấp (bộ nhớ đệm, số tab).",
+                            "Mở lại",
+                        ) { restartApp() }
+                    }
+                }
+            },
             MenuItem("Mở lại các tab lần trước khi khởi động: ${if (settings.restoreTabs) "BẬT" else "TẮT"}") {
                 settings.restoreTabs = !settings.restoreTabs
                 showToast("Mở lại tab lần trước: ${if (settings.restoreTabs) "BẬT" else "TẮT"}")
@@ -1001,6 +1016,17 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             "&d=" + enc(device) +
             "&c=" + enc(crash)
         tabs.newTab(report, desktopMode = true)
+    }
+
+    /** Mở lại app (GeckoRuntime chỉ đọc cấu hình lúc khởi động). Tab được khôi phục nhờ SessionStore. */
+    private fun restartApp() {
+        saveSession()
+        val intent = packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+        val pending = android.app.PendingIntent.getActivity(this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE)
+        getSystemService(android.app.AlarmManager::class.java)
+            .set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 400, pending)
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
     private fun clearBrowsingData() {
@@ -1103,7 +1129,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         val blocked = UblockBridge.blockedCount.takeIf { it >= 0 }?.toString() ?: "—"
         val extra = listOf(
             "uBO chặn : $blocked yêu cầu",
-            "Tab      : ${tabs.tabs.size} (đang trong RAM: ${tabs.tabs.count { it.isLive }})",
+            "Tab      : ${tabs.tabs.size}/${tabs.maxTabs} (đang trong RAM: ${tabs.tabs.count { it.isLive }})",
+            "RAM thấp : ${if (BrowserRuntime.isLowRam) "BẬT (bộ lọc gọn, cache nhỏ)" else "tắt"}",
             "Crash    : ${CrashLog.summary(this) ?: "chưa có"}",
         )
         diagPanel.text = diagnostics.snapshot(ublockStatusText(), currentUrl, extra)

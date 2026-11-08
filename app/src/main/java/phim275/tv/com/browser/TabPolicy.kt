@@ -11,6 +11,11 @@ object TabPolicy {
 
     fun maxLiveTabsFor(totalRamBytes: Long): Int = if (totalRamBytes < LOW_RAM_THRESHOLD_BYTES) 1 else MAX_LIVE_TABS
 
+    /** Box 1GB (chế độ RAM thấp): tối đa 3 tab, mỗi tab nền chỉ giữ URL. */
+    const val MAX_TABS_LOW_RAM = 3
+
+    fun maxTabsFor(lowRam: Boolean): Int = if (lowRam) MAX_TABS_LOW_RAM else MAX_TABS
+
     data class TabInfo(val id: Int, val lastActiveMs: Long, val isCurrent: Boolean, val isLive: Boolean)
 
     /** Tab cần đóng hẳn khi mở thêm tab mới mà đã đủ [max] tab: tab cũ nhất không phải tab hiện tại. */

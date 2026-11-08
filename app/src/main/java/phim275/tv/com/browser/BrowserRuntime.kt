@@ -7,6 +7,7 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.WebExtension
 import phim275.tv.com.BuildConfig
 import phim275.tv.com.data.AppSettings
+import phim275.tv.com.data.DeviceProfile
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -68,10 +69,27 @@ object BrowserRuntime {
         "image.mem.surfacecache.max_size_kb" to "131072",
     )
 
-    private fun writeGeckoConfig(appContext: Context): String {
+    /** Chế độ RAM thấp (TV box 1GB): đè lên LOW_MEMORY_PREFS. */
+    private val TINY_RAM_PREFS = mapOf(
+        "image.mem.surfacecache.max_size_kb" to "49152",     // ảnh đã giải mã: 48MB
+        "browser.cache.memory.capacity" to "8192",           // cache RAM: 8MB
+        "browser.sessionhistory.max_entries" to "15",        // lịch sử Back mỗi tab (mặc định 50)
+        "media.memory_cache_max_size" to "16384",            // đệm video trong RAM: 16MB (phần còn lại ra đĩa)
+        "javascript.options.mem.gc_incremental_slice_ms" to "10",
+        "image.mem.decode_bytes_at_a_time" to "65536",       // giải mã ảnh từng phần nhỏ
+        "layout.css.prefers-reduced-motion" to "1",          // bớt hiệu ứng chuyển động
+        "layers.gpu-process.enabled" to "false",             // gộp compositor vào process chính (bớt ~40–70MB)
+    )
+
+    @Volatile
+    var isLowRam: Boolean = false
+        private set
+
+    private fun writeGeckoConfig(appContext: Context, lowRam: Boolean): String {
+        val prefs = if (lowRam) LOW_MEMORY_PREFS + TINY_RAM_PREFS else LOW_MEMORY_PREFS
         val yaml = buildString {
             appendLine("prefs:")
-            LOW_MEMORY_PREFS.forEach { (k, v) -> appendLine("  $k: $v") }
+            prefs.forEach { (k, v) -> appendLine("  $k: $v") }
         }
         val file = java.io.File(appContext.filesDir, "geckoview-config.yaml")
         if (!file.exists() || file.readText() != yaml) file.writeText(yaml)
@@ -79,16 +97,22 @@ object BrowserRuntime {
     }
 
     private fun create(appContext: Context): GeckoRuntime {
+        val lowRam = DeviceProfile.isLowRam(appContext)
+        isLowRam = lowRam
+        UblockBridge.lowMemoryLists = lowRam
         val settings = GeckoRuntimeSettings.Builder()
-            .configFilePath(writeGeckoConfig(appContext))
+            .configFilePath(writeGeckoConfig(appContext, lowRam))
+            // Biến môi trường cho Gecko (GeckoThread đọc "env0", "env1"…): tắt bộ thu crash của Firefox —
+            // Phim275 không gửi báo cáo crash của Gecko đi đâu, mà process crashhelper tốn ~40MB RAM.
+            .extras(android.os.Bundle().apply { putString("env0", "MOZ_CRASHREPORTER_DISABLE=1") })
             .remoteDebuggingEnabled(BuildConfig.DEBUG)
             .consoleOutput(BuildConfig.DEBUG)
             .aboutConfigEnabled(BuildConfig.DEBUG)
             // Máy chiếu/TV box ~2GB RAM: không tách mỗi trang một process.
             .fissionEnabled(false)
-            // uBO chạy ở process riêng: thiếu RAM thì hệ thống giết process này trước,
-            // giao diện app vẫn sống (Gecko tự khởi động lại extension).
-            .extensionsProcessEnabled(true)
+            // Máy thường: uBO chạy ở process riêng (thiếu RAM thì hệ thống giết process này trước,
+            // giao diện app vẫn sống). Box 1GB: chạy chung process chính để bớt một process (~40–60MB).
+            .extensionsProcessEnabled(!lowRam)
             .lowMemoryDetection(true)
             .doubleTapZoomingEnabled(false)
             .inputAutoZoomEnabled(false)

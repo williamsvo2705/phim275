@@ -15,6 +15,7 @@
       - cập nhật bộ lọc ngay
       - mở công cụ chọn phần tử để ẩn (element picker / zapper)
       - điều khiển video bằng phím media của remote (phát/dừng, tua)
+      - chế độ RAM thấp: chuyển sang bộ lọc gọn cho box 1GB
 
 *******************************************************************************/
 
@@ -22,6 +23,56 @@ import µb from './background.js';
 
 const NATIVE_APP = 'phim275';
 let port = null;
+
+// Chế độ RAM thấp (box 1GB): chỉ giữ bộ lọc cốt lõi (~90k luật thay vì ~140k).
+const LEAN_LISTS = [
+    'user-filters',
+    'ublock-filters', 'ublock-badware', 'ublock-privacy', 'ublock-unbreak', 'ublock-quick-fixes',
+    'easylist',
+    'VIE-1',            // ABPVN — trang Việt
+    'phim275-filters',
+];
+const SAVED_SELECTION_KEY = 'phim275SavedFilterLists';
+
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+
+/** Chờ uBO nạp xong cấu hình (µb.readyToFilter) — trước đó selectedFilterLists còn rỗng. */
+async function waitUntilReady(timeoutMs = 60000) {
+    const start = Date.now();
+    while ( µb.readyToFilter !== true ) {
+        if ( Date.now() - start > timeoutMs ) { throw new Error('uBO chưa sẵn sàng'); }
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+}
+
+/** Bật: lưu lựa chọn hiện tại rồi chuyển sang bộ lọc gọn. Tắt: khôi phục lựa chọn đã lưu. */
+async function setLowMemoryLists(enabled) {
+    await waitUntilReady();
+    // Bộ lọc ẩn phần tử chung (generic cosmetic): đo trên máy 1GB tốn ~90MB RAM mà chỉ ẩn thêm
+    // các ô quảng cáo trống (chặn tầng mạng vẫn giữ nguyên) → tắt ở chế độ RAM thấp.
+    if ( µb.userSettings.ignoreGenericCosmeticFilters !== enabled ) {
+        µb.changeUserSettings('ignoreGenericCosmeticFilters', enabled);
+    }
+    const current = µb.selectedFilterLists.slice();
+    let target;
+    if ( enabled ) {
+        if ( sameSet(current, LEAN_LISTS) ) { return false; }
+        // Không bao giờ lưu một lựa chọn rỗng làm "lựa chọn cũ" (khôi phục sẽ làm mất hết bộ lọc).
+        if ( current.length !== 0 ) {
+            await browser.storage.local.set({ [SAVED_SELECTION_KEY]: current });
+        }
+        target = LEAN_LISTS;
+    } else {
+        const bin = await browser.storage.local.get(SAVED_SELECTION_KEY);
+        const saved = bin[SAVED_SELECTION_KEY];
+        if ( !Array.isArray(saved) || saved.length === 0 || !sameSet(current, LEAN_LISTS) ) { return false; }
+        await browser.storage.local.remove(SAVED_SELECTION_KEY);
+        target = saved;
+    }
+    µb.applyFilterListSelection({ toSelect: target });
+    µb.loadFilterLists();
+    return true;
+}
 
 function send(data) {
     if ( port === null ) { return; }
@@ -49,6 +100,8 @@ async function handle(msg) {
             blocked: µb.requestStats.blockedCount,
             allowed: µb.requestStats.allowedCount,
         };
+    case 'setLowMemoryLists':
+        return { changed: await setLowMemoryLists(msg.enabled === true), lists: µb.selectedFilterLists.length };
     case 'updateFilters':
         µb.scheduleAssetUpdater({ now: true, fetchDelay: 100 });
         return { ok: true };

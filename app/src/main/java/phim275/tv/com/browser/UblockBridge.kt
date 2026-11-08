@@ -26,12 +26,36 @@ object UblockBridge {
 
     val isConnected: Boolean get() = port != null
 
+    /** Chế độ RAM thấp mong muốn — được gửi lại cho uBO mỗi lần cầu nối (tái) kết nối. */
+    @Volatile
+    var lowMemoryLists: Boolean = false
+        set(value) {
+            field = value
+            applyLowMemoryLists()
+        }
+
+    private fun applyLowMemoryLists() {
+        if (port == null) return // gửi lại khi uBO kết nối
+        request("setLowMemoryLists", mapOf("enabled" to lowMemoryLists)) { reply ->
+            Log.i(
+                TAG,
+                if (reply == null) {
+                    "Bộ lọc gọn (RAM thấp)=$lowMemoryLists → chưa có phản hồi (uBO đang khởi động, sẽ tự áp dụng)"
+                } else {
+                    "Bộ lọc gọn (RAM thấp)=$lowMemoryLists → ${if (reply.optBoolean("changed")) "đã đổi" else "giữ nguyên"}" +
+                        " · đang dùng ${reply.optInt("lists", -1)} danh sách lọc"
+                },
+            )
+        }
+    }
+
     fun attach(extension: WebExtension) {
         extension.setMessageDelegate(object : WebExtension.MessageDelegate {
             override fun onConnect(newPort: WebExtension.Port) {
                 Log.i(TAG, "uBO đã kết nối")
                 port = newPort
                 newPort.setDelegate(portDelegate)
+                applyLowMemoryLists()
             }
         }, NATIVE_APP)
     }

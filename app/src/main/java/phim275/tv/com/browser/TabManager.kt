@@ -33,6 +33,8 @@ class TabManager(
     private val listener: Listener,
     /** Số tab tối đa giữ trong RAM (máy RAM thấp: 1). */
     private val maxLiveTabs: Int = TabPolicy.MAX_LIVE_TABS,
+    /** Số tab tối đa (box 1GB: 3). */
+    val maxTabs: Int = TabPolicy.MAX_TABS,
 ) {
     interface Listener {
         fun onCurrentTabChanged(tab: BrowserTab)
@@ -50,7 +52,7 @@ class TabManager(
     fun isCurrent(session: GeckoSession): Boolean = current?.session === session
 
     fun newTab(url: String, desktopMode: Boolean): BrowserTab {
-        TabPolicy.tabToClose(infos())?.let { id -> _tabs.firstOrNull { it.id == id }?.let { closeInternal(it) } }
+        TabPolicy.tabToClose(infos(), maxTabs)?.let { id -> _tabs.firstOrNull { it.id == id }?.let { closeInternal(it) } }
         val tab = BrowserTab(nextId++).also {
             it.url = url
             it.desktopMode = desktopMode
@@ -67,7 +69,7 @@ class TabManager(
      */
     fun restore(entries: List<Triple<String, String?, Boolean>>, currentIndex: Int) {
         if (entries.isEmpty()) return
-        entries.forEach { (url, title, desktop) ->
+        entries.takeLast(maxTabs).forEach { (url, title, desktop) ->
             _tabs += BrowserTab(nextId++).also {
                 it.url = url
                 it.title = title

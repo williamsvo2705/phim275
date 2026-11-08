@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.6.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
+> Trạng thái: **0.7.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
 
 ## Tính năng
 
@@ -24,6 +24,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Báo lỗi | Menu → Báo trang lỗi → mã QR mở GitHub Issue điền sẵn (quét bằng điện thoại) · ghi log crash |
 | Tự cập nhật | Kiểm tra `latest.json` mỗi ngày → tải, kiểm SHA-256, cài bằng PackageInstaller |
 | Khôi phục | Mở lại các tab lần trước khi khởi động (sau cập nhật / khi Android đóng app vì thiếu RAM) |
+| Box 1GB (chế độ RAM thấp) | Tự bật khi máy < 1,5GB RAM (hoặc bật tay): bộ lọc gọn 9 danh sách, bỏ lọc ẩn phần tử chung, uBO + GPU chung process chính, cache ảnh 48MB, tối đa 3 tab · đo trên emulator 1GB: 505MB → 326MB |
 | RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, giải phóng tab nền khi thiếu RAM, tự khôi phục tab bị giết |
 
 Đo trên emulator Android TV 2GB RAM, bản release, trang 24h.com.vn: **~630MB** tổng RAM của app ·

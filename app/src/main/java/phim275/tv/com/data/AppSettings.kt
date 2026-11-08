@@ -43,6 +43,11 @@ class AppSettings(context: Context) {
         get() = prefs.getFloat(KEY_FONT_SCALE, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_FONT_SCALE, value).apply()
 
+    /** Chế độ tiết kiệm RAM cho TV box yếu (bộ lọc gọn, cache nhỏ, ít tab). */
+    var lowRamMode: DeviceProfile.LowRamMode
+        get() = DeviceProfile.LowRamMode.fromId(prefs.getString(KEY_LOW_RAM, null))
+        set(value) = prefs.edit().putString(KEY_LOW_RAM, value.id).apply()
+
     /** Mở lại các tab của lần trước khi khởi động app. */
     var restoreTabs: Boolean
         get() = prefs.getBoolean(KEY_RESTORE_TABS, true)
@@ -64,6 +69,7 @@ class AppSettings(context: Context) {
         const val KEY_AUTO_UPDATE = "auto_update"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_RESTORE_TABS = "restore_tabs"
+        const val KEY_LOW_RAM = "low_ram_mode"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     }
 }
