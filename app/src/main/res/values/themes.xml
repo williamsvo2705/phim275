@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#FF0E1116</color>
-    <color name="toolbar_bg">#E6161B22</color>
+    <!-- ── Hệ màu Phim275 (dùng chung với trang chủ: assets/home/index.html) ── -->
+    <color name="bg">#FF0B0E13</color>
+    <color name="surface">#FF151A22</color>
+    <color name="surface_2">#FF1E2530</color>
+    <color name="surface_focus">#FF2A3342</color>
+    <color name="toolbar_bg">#F2111620</color>
+    <color name="scrim">#B3000000</color>
     <color name="accent">#FFE50914</color>
+    <color name="accent_soft">#33E50914</color>
+    <color name="ok">#FF2ECC71</color>
     <color name="text">#FFF2F4F8</color>
     <color name="text_dim">#FF9AA4B2</color>
+    <color name="text_faint">#FF6B7585</color>
+    <color name="divider">#FF262E3A</color>
+    <color name="star">#FFFFC940</color>
 
     <style name="Theme.Phim275" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/bg</item>
@@ -13,17 +23,34 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <!-- Nút icon trên thanh công cụ (44dp vuông, icon 22dp). -->
+    <style name="ToolbarIcon">
+        <item name="android:layout_width">@dimen/toolbar_button</item>
+        <item name="android:layout_height">@dimen/toolbar_button</item>
+        <item name="android:layout_marginEnd">@dimen/space_s</item>
+        <item name="android:padding">11dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:tint">@color/text</item>
+        <item name="android:background">@drawable/toolbar_button_bg</item>
+    </style>
+
+    <!-- Nút chữ trên thanh công cụ (Tab n). -->
     <style name="ToolbarButton">
         <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">48dp</item>
-        <item name="android:minWidth">56dp</item>
-        <item name="android:paddingStart">14dp</item>
+        <item name="android:layout_height">@dimen/toolbar_button</item>
+        <item name="android:minWidth">@dimen/toolbar_button</item>
+        <item name="android:paddingStart">12dp</item>
         <item name="android:paddingEnd">14dp</item>
-        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:layout_marginEnd">@dimen/space_s</item>
         <item name="android:gravity">center</item>
+        <item name="android:drawablePadding">6dp</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textStyle">bold</item>
         <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
         <item name="android:background">@drawable/toolbar_button_bg</item>
     </style>
 </resources>

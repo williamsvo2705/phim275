@@ -10,7 +10,7 @@
     <string name="btn_bookmark_add">☆</string>
     <string name="btn_bookmark_remove">★</string>
     <string name="btn_tabs">Tab 1</string>
-    <string name="btn_tabs_count">Tab %1$d</string>
+    <string name="btn_tabs_count">%1$d</string>
     <string name="btn_menu">☰ Menu</string>
     <string name="popup_blocked">Đã chặn popup: %1$s (mở lại trong ☰ Menu nếu cần)</string>
     <string name="scheme_blocked">Đã chặn chuyển hướng sang ứng dụng khác (%1$s)</string>

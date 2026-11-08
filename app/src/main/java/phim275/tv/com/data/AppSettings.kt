@@ -61,7 +61,13 @@ class AppSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
 
+    /** Đã xem màn hình hướng dẫn lần đầu. */
+    var onboardingDone: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDING, false)
+        set(value) = prefs.edit().putBoolean(KEY_ONBOARDING, value).apply()
+
     private companion object {
+        const val KEY_ONBOARDING = "onboarding_done"
         const val KEY_SEARCH = "search_engine"
         const val KEY_DESKTOP = "desktop_default"
         const val KEY_NAV = "nav_mode"

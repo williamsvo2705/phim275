@@ -26,51 +26,55 @@
         android:layout_gravity="top"
         android:max="100"
         android:progressTint="@color/accent"
+        android:progressBackgroundTint="@android:color/transparent"
         android:visibility="gone" />
 
+    <!-- Thanh công cụ: Giữ Back / Menu / đẩy con trỏ lên mép trên để mở. -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
         android:background="@color/toolbar_bg"
+        android:elevation="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="24dp"
-        android:paddingTop="10dp"
-        android:paddingEnd="24dp"
-        android:paddingBottom="10dp">
+        android:paddingStart="@dimen/space_xl"
+        android:paddingTop="@dimen/space_m"
+        android:paddingEnd="@dimen/space_xl"
+        android:paddingBottom="@dimen/space_m">
 
-        <TextView android:id="@+id/btn_back" style="@style/ToolbarButton" android:text="@string/btn_back" />
-        <TextView android:id="@+id/btn_forward" style="@style/ToolbarButton" android:text="@string/btn_forward" />
-        <TextView android:id="@+id/btn_reload" style="@style/ToolbarButton" android:text="@string/btn_reload" />
-        <TextView android:id="@+id/btn_home" style="@style/ToolbarButton" android:text="@string/btn_home" />
+        <ImageView android:id="@+id/btn_back" style="@style/ToolbarIcon" android:contentDescription="Quay lại" android:src="@drawable/ic_back" />
+        <ImageView android:id="@+id/btn_forward" style="@style/ToolbarIcon" android:contentDescription="Tiến tới" android:src="@drawable/ic_forward" />
+        <ImageView android:id="@+id/btn_reload" style="@style/ToolbarIcon" android:contentDescription="Tải lại" android:src="@drawable/ic_refresh" />
+        <ImageView android:id="@+id/btn_home" style="@style/ToolbarIcon" android:contentDescription="Trang chủ" android:src="@drawable/ic_home" />
 
-        <!-- Không dùng EditText: bàn phím TV (LeanKey…) tự bật khi ô nhập nhận focus → kẹt.
-             Bấm OK vào ô này để mở hộp nhập địa chỉ. -->
+        <!-- Ô địa chỉ là nút (không phải ô nhập): bấm OK mới mở hộp nhập, bàn phím TV không tự bật. -->
         <TextView
             android:id="@+id/url_bar"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="6dp"
+            android:layout_height="@dimen/toolbar_button"
+            android:layout_marginStart="@dimen/space_s"
+            android:layout_marginEnd="@dimen/space_m"
             android:layout_weight="1"
             android:background="@drawable/toolbar_button_bg"
             android:clickable="true"
-            android:ellipsize="middle"
+            android:drawablePadding="10dp"
+            android:ellipsize="end"
             android:focusable="true"
             android:gravity="center_vertical"
             android:hint="@string/url_hint"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
             android:singleLine="true"
-            android:textColor="@color/text"
-            android:textColorHint="@color/text_dim"
-            android:textSize="18sp" />
+            android:textColor="@color/text_dim"
+            android:textColorHint="@color/text_faint"
+            android:textSize="@dimen/text_body" />
 
-        <TextView android:id="@+id/btn_voice" style="@style/ToolbarButton" android:text="@string/btn_voice" />
-        <TextView android:id="@+id/btn_bookmark" style="@style/ToolbarButton" android:text="@string/btn_bookmark_add" />
-        <TextView android:id="@+id/btn_tabs" style="@style/ToolbarButton" android:text="@string/btn_tabs" />
-        <TextView android:id="@+id/btn_menu" style="@style/ToolbarButton" android:text="@string/btn_menu" />
+        <ImageView android:id="@+id/btn_voice" style="@style/ToolbarIcon" android:contentDescription="Tìm bằng giọng nói" android:src="@drawable/ic_mic" />
+        <ImageView android:id="@+id/btn_bookmark" style="@style/ToolbarIcon" android:contentDescription="Bookmark" android:src="@drawable/ic_star_border" />
+        <TextView android:id="@+id/btn_tabs" style="@style/ToolbarButton" android:text="1" />
+        <ImageView android:id="@+id/btn_menu" style="@style/ToolbarIcon" android:layout_marginEnd="0dp" android:contentDescription="Menu" android:src="@drawable/ic_menu" />
     </LinearLayout>
 
     <TextView
@@ -78,11 +82,30 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_margin="24dp"
-        android:background="#D9000000"
+        android:layout_margin="@dimen/space_l"
+        android:background="@drawable/snackbar_bg"
         android:fontFamily="monospace"
         android:padding="14dp"
         android:textColor="#FF7CFC9A"
-        android:textSize="13sp"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <!-- Thông báo ngắn (thay Toast hệ thống — trên TV Toast có kèm icon app, trông lạc lõng). -->
+    <TextView
+        android:id="@+id/snackbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="36dp"
+        android:background="@drawable/snackbar_bg"
+        android:elevation="12dp"
+        android:gravity="center"
+        android:maxWidth="760dp"
+        android:paddingStart="22dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="22dp"
+        android:paddingBottom="10dp"
+        android:textColor="@color/text"
+        android:textSize="@dimen/text_body"
         android:visibility="gone" />
 </FrameLayout>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Màn hình TV = 960×540dp (1080p @ xhdpi). Thang 8dp, cỡ chữ xem rõ từ 3m. -->
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_s">8dp</dimen>
+    <dimen name="space_m">16dp</dimen>
+    <dimen name="space_l">24dp</dimen>
+    <dimen name="space_xl">32dp</dimen>
+
+    <dimen name="text_caption">12sp</dimen>
+    <dimen name="text_body">15sp</dimen>
+    <dimen name="text_title">20sp</dimen>
+    <dimen name="text_display">26sp</dimen>
+
+    <dimen name="radius_m">10dp</dimen>
+    <dimen name="radius_l">16dp</dimen>
+
+    <dimen name="toolbar_button">44dp</dimen>
+    <dimen name="panel_width">400dp</dimen>
+    <dimen name="panel_row">46dp</dimen>
+    <dimen name="panel_icon">22dp</dimen>
+</resources>

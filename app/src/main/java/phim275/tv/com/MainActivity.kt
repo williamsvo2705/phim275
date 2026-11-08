@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.ComponentCallbacks2
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,11 +15,18 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.speech.RecognizerIntent
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -30,7 +39,8 @@ import android.webkit.URLUtil
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
+import android.widget.ImageView
+import android.widget.LinearLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
@@ -71,10 +81,12 @@ import phim275.tv.com.data.SessionStore
 import org.mozilla.geckoview.MediaSession
 import phim275.tv.com.diag.CrashLog
 import phim275.tv.com.diag.Diagnostics
-import phim275.tv.com.ui.MenuItem
-import phim275.tv.com.ui.showChoice
-import phim275.tv.com.ui.showConfirm
-import phim275.tv.com.ui.showMenu
+import phim275.tv.com.ui.PanelItem
+import phim275.tv.com.ui.PanelSection
+import phim275.tv.com.ui.SidePanel
+import phim275.tv.com.ui.choose
+import phim275.tv.com.ui.confirm
+import phim275.tv.com.ui.menu
 import phim275.tv.com.ui.showProgress
 import phim275.tv.com.update.ApkInstaller
 import phim275.tv.com.update.UpdateInfo
@@ -91,7 +103,9 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private lateinit var progress: ProgressBar
     private lateinit var diagPanel: TextView
     private lateinit var btnTabs: TextView
-    private lateinit var btnBookmark: TextView
+    private lateinit var btnBookmark: ImageView
+    private lateinit var snackbar: TextView
+    private lateinit var panel: SidePanel
 
     private lateinit var settings: AppSettings
     private lateinit var bookmarks: LinkStore
@@ -115,7 +129,6 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private var topPushAccumPx = 0f
     private var blockedPopupUrl: String? = null
     private var blockedPopupAtMs = 0L
-    private var toast: Toast? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val diagUpdater = object : Runnable {
@@ -160,15 +173,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             showMainMenu()
             return
         }
-        showMenu(text.ifBlank { href }.take(60), listOf(
-            MenuItem("Mở") { currentSession?.loadUri(href) },
-            MenuItem("Mở trong tab mới") { tabs.newTab(href, settings.desktopModeDefault) },
-            MenuItem("Thêm vào bookmark") {
-                bookmarks.add(href, text.ifBlank { null })
-                showToast("Đã thêm vào bookmark")
-            },
-            MenuItem("☰ Menu trang…") { showMainMenu() },
-        ))
+        beforePanel()
+        panel.show(text.ifBlank { "Liên kết" }.take(60), SitePolicy.hostOf(href) ?: href.take(60)) {
+            listOf(PanelSection(null, linkItems(href, text) + PanelItem("Menu trang…", R.drawable.ic_menu) { showMainMenu() }))
+        }
     }
 
     private val currentTab: BrowserTab? get() = tabs.current
@@ -195,6 +203,12 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         diagPanel = findViewById(R.id.diag_panel)
         btnTabs = findViewById(R.id.btn_tabs)
         btnBookmark = findViewById(R.id.btn_bookmark)
+        snackbar = findViewById(R.id.snackbar)
+        panel = SidePanel(this).apply {
+            onHidden = { if (onboarding == null && !isToolbarMode()) geckoView.requestFocus() }
+        }
+        findViewById<ViewGroup>(R.id.root).addView(panel, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        setStartIcon(btnTabs, R.drawable.ic_tabs, R.color.text)
         cursor = CursorController(cursorView, this)
 
         runtime = BrowserRuntime.get(this)
@@ -224,6 +238,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
         enterPageMode()
         scheduleAutoUpdateCheck()
+        if (!settings.onboardingDone) showOnboarding()
     }
 
     private fun saveSession() {
@@ -437,7 +452,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         keepScreenOn(false)
         pageScrollY = 0
         progress.visibility = View.GONE
-        urlBar.setText(displayUrl(tab.url)) // đổi tab → luôn hiện URL của tab mới
+        renderUrlBar(tab.url) // đổi tab → luôn hiện URL của tab mới
         updateTabButton()
         updateBookmarkButton()
     }
@@ -451,7 +466,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private fun updateBookmarkButton() {
         val url = currentUrl
         val marked = url != null && bookmarks.contains(url)
-        btnBookmark.setText(if (marked) R.string.btn_bookmark_remove else R.string.btn_bookmark_add)
+        btnBookmark.setImageResource(if (marked) R.drawable.ic_star else R.drawable.ic_star_border)
+        btnBookmark.imageTintList = ColorStateList.valueOf(getColor(if (marked) R.color.star else R.color.text))
     }
 
     private fun navigate(text: String) {
@@ -494,7 +510,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             tab.url = url
             tab.title = null
             if (tabs.isCurrent(session)) {
-                if (!urlBar.hasFocus()) urlBar.setText(displayUrl(url))
+                renderUrlBar(url)
                 updateBookmarkButton()
             }
         }
@@ -743,7 +759,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private fun enterToolbarMode() {
         topPushAccumPx = 0f
         toolbar.visibility = View.VISIBLE
-        urlBar.setText(displayUrl(currentUrl))
+        renderUrlBar(currentUrl)
         updateBookmarkButton()
         urlBar.requestFocus()
     }
@@ -769,12 +785,20 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
     }
 
-    // ───────────────────────────── Menu ─────────────────────────────
+    // ───────────────────────────── Menu (bảng trượt bên phải) ─────────────────────────────
+
+    /** Mở bảng: ẩn thanh công cụ và thông báo (bảng che bên phải, không cần cả hai cùng lúc). */
+    private fun beforePanel() {
+        if (isToolbarMode()) toolbar.visibility = View.GONE
+        handler.removeCallbacks(hideSnackbar)
+        snackbar.visibility = View.GONE
+    }
 
     private fun showMainMenu() {
         val url = currentUrl
         val isWebPage = LinkStore.isRecordable(url)
-        // Hỏi uBO trạng thái chặn của trang trước khi dựng menu.
+        beforePanel()
+        // Hỏi uBO trạng thái chặn của trang trước khi dựng menu (trả lời trong vài ms).
         if (isWebPage && UblockBridge.isConnected) {
             UblockBridge.getSiteEnabled(url!!) { enabled -> buildMainMenu(url, enabled) }
         } else {
@@ -784,56 +808,75 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     private fun buildMainMenu(url: String?, adBlockEnabled: Boolean?) {
         val isWebPage = LinkStore.isRecordable(url)
-        val items = mutableListOf<MenuItem>()
-        recentBlockedPopup()?.let { popup ->
-            items += MenuItem("↗ Mở popup vừa bị chặn: ${SitePolicy.hostOf(popup) ?: popup.take(40)}") {
-                blockedPopupUrl = null
-                tabs.newTab(popup, settings.desktopModeDefault)
+        val host = if (isWebPage) SitePolicy.hostOf(url!!) else null
+        panel.show("Phim275", host ?: "Trang chủ") {
+            val page = mutableListOf<PanelItem>()
+            recentBlockedPopup()?.let { popup ->
+                page += PanelItem("Mở popup vừa bị chặn", R.drawable.ic_open, value = SitePolicy.hostOf(popup), accent = true) {
+                    blockedPopupUrl = null
+                    tabs.newTab(popup, settings.desktopModeDefault)
+                }
             }
-        }
-        items += if (settings.navMode == NavMode.CURSOR) {
-            MenuItem("▦ Đổi sang chuyển khối bằng phím mũi tên") { setNavMode(NavMode.SPATIAL) }
-        } else {
-            MenuItem("🖱 Đổi sang con trỏ chuột") { setNavMode(NavMode.CURSOR) }
-        }
-        items += MenuItem("🔍 Tìm kiếm / nhập địa chỉ") { showTextEntryDialog(forPage = false) }
-        items += MenuItem("⌨ Nhập chữ vào ô đang chọn trên trang (khi bàn phím không hiện)") { showTextEntryDialog(forPage = true) }
-        items += MenuItem("＋ Tab mới") { tabs.newTab(homeUrl(), settings.desktopModeDefault) }
-        items += MenuItem("▤ Tab đang mở (${tabs.tabs.size})") { showTabsMenu() }
-        items += MenuItem("★ Bookmark") { showBookmarksMenu() }
-        items += MenuItem("🕘 Lịch sử") { showHistoryMenu() }
-        if (isWebPage) {
-            when (adBlockEnabled) {
-                true -> items += MenuItem("🛡 Chặn quảng cáo trên trang này: BẬT  (bấm để tắt)") { setSiteAdBlock(url!!, false) }
-                false -> items += MenuItem("🛡 Chặn quảng cáo trên trang này: TẮT  (bấm để bật)") { setSiteAdBlock(url!!, true) }
-                null -> Unit
+            if (isWebPage) {
+                val marked = bookmarks.contains(url!!)
+                page += PanelItem(if (marked) "Bỏ bookmark" else "Thêm bookmark", if (marked) R.drawable.ic_star else R.drawable.ic_star_border) {
+                    toggleBookmark()
+                }
+                if (adBlockEnabled != null) {
+                    page += PanelItem("Chặn quảng cáo trên trang", R.drawable.ic_shield, on = adBlockEnabled) {
+                        setSiteAdBlock(url, !adBlockEnabled)
+                    }
+                }
+                page += PanelItem("Ẩn một phần tử trên trang", R.drawable.ic_cut) { pickElement(zap = false) }
+                page += PanelItem("Xóa tạm phần tử che màn hình", R.drawable.ic_clean) { pickElement(zap = true) }
+                page += PanelItem("Báo trang lỗi / còn quảng cáo", R.drawable.ic_flag) { reportPage(url) }
             }
-            items += MenuItem("✂ Ẩn một phần tử trên trang (chọn bằng con trỏ)") { pickElement(zap = false) }
-            items += MenuItem("🧽 Xóa tạm phần tử che màn hình") { pickElement(zap = true) }
-            items += MenuItem("🐞 Báo trang lỗi / còn quảng cáo") { reportPage(url!!) }
-        }
-        val tab = currentTab
-        if (tab != null) {
-            items += MenuItem(if (tab.desktopMode) "🖥 Đang xem bản Desktop → chuyển Mobile" else "📱 Đang xem bản Mobile → chuyển Desktop") {
-                tabs.setDesktopMode(tab, !tab.desktopMode)
+            currentTab?.let { tab ->
+                page += PanelItem(
+                    "Phiên bản trang",
+                    if (tab.desktopMode) R.drawable.ic_desktop else R.drawable.ic_phone,
+                    value = if (tab.desktopMode) "Desktop" else "Mobile",
+                ) { tabs.setDesktopMode(tab, !tab.desktopMode) }
             }
+            listOf(
+                PanelSection("Trang này", page),
+                PanelSection("Duyệt web", listOf(
+                    PanelItem("Tìm kiếm / nhập địa chỉ", R.drawable.ic_search) { showTextEntryDialog(forPage = false) },
+                    PanelItem("Nhập chữ vào ô trên trang", R.drawable.ic_keyboard) {
+                        showTextEntryDialog(forPage = true)
+                    },
+                    PanelItem("Tab mới", R.drawable.ic_add) { tabs.newTab(homeUrl(), settings.desktopModeDefault) },
+                    PanelItem("Tab đang mở", R.drawable.ic_tabs, value = "${tabs.tabs.size}") { showTabsMenu() },
+                    PanelItem("Bookmark", R.drawable.ic_star_border, value = "${bookmarks.all().size}") { showBookmarksMenu() },
+                    PanelItem("Lịch sử", R.drawable.ic_history) { showHistoryMenu() },
+                )),
+                PanelSection("Ứng dụng", listOf(
+                    navModeItem(),
+                    PanelItem("Cài đặt", R.drawable.ic_tune) { showSettingsMenu() },
+                    PanelItem("Chẩn đoán hiệu năng", R.drawable.ic_chart, on = diagPanel.visibility == View.VISIBLE, keepOpen = true) {
+                        toggleDiagnostics()
+                        panel.refresh()
+                    },
+                    PanelItem("Kiểm tra bản cập nhật", R.drawable.ic_update, value = BuildConfig.VERSION_NAME) { checkForUpdates(silent = false) },
+                )),
+            )
         }
-        items += MenuItem("⚙ Cài đặt") { showSettingsMenu() }
-        items += MenuItem("📊 Chẩn đoán (bật/tắt)") { toggleDiagnostics() }
-        showMenu("Phim275", items)
+    }
+
+    private fun navModeItem() = PanelItem(
+        "Cách điều khiển",
+        if (settings.navMode == NavMode.CURSOR) R.drawable.ic_mouse else R.drawable.ic_grid,
+        value = if (settings.navMode == NavMode.CURSOR) "Con trỏ" else "Chuyển khối",
+    ) {
+        panel.choose("Điều khiển bằng remote", "Có thể đổi bất cứ lúc nào trong Menu", NavMode.entries, { settings.navMode }, { it.label }) {
+            setNavMode(it)
+        }
     }
 
     private fun showContextMenu(element: ContextElement) {
-        val items = mutableListOf<MenuItem>()
+        val items = mutableListOf<PanelItem>()
         val link = element.linkUri
-        if (link != null) {
-            items += MenuItem("Mở liên kết") { currentSession?.loadUri(link) }
-            items += MenuItem("Mở liên kết trong tab mới") { tabs.newTab(link, settings.desktopModeDefault) }
-            items += MenuItem("Thêm liên kết vào bookmark") {
-                bookmarks.add(link, element.linkText ?: element.title)
-                showToast("Đã thêm vào bookmark")
-            }
-        }
+        if (link != null) items += linkItems(link, element.linkText ?: element.title)
         val src = element.srcUri
         if (src != null && element.type != ContextElement.TYPE_NONE) {
             val what = when (element.type) {
@@ -841,29 +884,66 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 ContextElement.TYPE_AUDIO -> "âm thanh"
                 else -> "ảnh"
             }
-            items += MenuItem("Mở $what trong tab mới") { tabs.newTab(src, settings.desktopModeDefault) }
+            items += PanelItem("Mở $what trong tab mới", R.drawable.ic_open) { tabs.newTab(src, settings.desktopModeDefault) }
         }
-        items += MenuItem("☰ Menu trang…") { showMainMenu() }
-        if (items.size == 1) showMainMenu() else showMenu(element.linkText?.take(60) ?: link?.take(60), items)
+        if (items.isEmpty()) {
+            showMainMenu()
+            return
+        }
+        items += PanelItem("Menu trang…", R.drawable.ic_menu) { showMainMenu() }
+        beforePanel()
+        panel.show(element.linkText?.take(60) ?: "Liên kết", link?.let { SitePolicy.hostOf(it) ?: it.take(60) }) {
+            listOf(PanelSection(null, items))
+        }
     }
 
+    private fun linkItems(link: String, title: String?) = listOf(
+        PanelItem("Mở", R.drawable.ic_open) { currentSession?.loadUri(link) },
+        PanelItem("Mở trong tab mới", R.drawable.ic_add) { tabs.newTab(link, settings.desktopModeDefault) },
+        PanelItem("Thêm vào bookmark", R.drawable.ic_star_border) {
+            bookmarks.add(link, title?.ifBlank { null })
+            showToast("★ Đã thêm vào bookmark")
+        },
+    )
+
     private fun showTabsMenu() {
-        val items = mutableListOf(MenuItem("＋ Tab mới") { tabs.newTab(homeUrl(), settings.desktopModeDefault) })
-        tabs.tabs.forEach { tab ->
-            val mark = if (tab === currentTab) "● " else if (tab.isLive) "○ " else "◌ "
-            items += MenuItem(mark + tab.label().take(70)) { showTabActions(tab) }
+        beforePanel()
+        panel.push("Tab đang mở", "Tối đa ${tabs.maxTabs} tab · ○ = đang ngủ để tiết kiệm RAM") {
+            val list = tabs.tabs.map { tab ->
+                val current = tab === currentTab
+                PanelItem(
+                    (if (!current && !tab.isLive) "○ " else "") + tab.label().take(70),
+                    if (current) R.drawable.ic_check else 0,
+                    value = if (current) "đang xem" else null,
+                    accent = current,
+                ) { showTabActions(tab) }
+            }
+            listOf(
+                PanelSection(null, listOf(PanelItem("Tab mới", R.drawable.ic_add) { tabs.newTab(homeUrl(), settings.desktopModeDefault) })),
+                PanelSection("${tabs.tabs.size} tab", list),
+                PanelSection(
+                    null,
+                    if (tabs.tabs.size > 1) listOf(PanelItem("Đóng các tab khác", R.drawable.ic_close) { tabs.closeOthers() }) else emptyList(),
+                ),
+            )
         }
-        if (tabs.tabs.size > 1) items += MenuItem("✖ Đóng các tab khác") { tabs.closeOthers() }
-        showMenu("Tab đang mở · tối đa ${tabs.maxTabs}", items)
     }
 
     private fun showTabActions(tab: BrowserTab) {
-        val items = mutableListOf(MenuItem("Chuyển tới tab này") {
-            tabs.select(tab)
-            enterPageMode()
-        })
-        if (tabs.tabs.size > 1) items += MenuItem("Đóng tab") { tabs.close(tab) }
-        showMenu(tab.label().take(60), items)
+        panel.menu(tab.label().take(60), tab.url?.let { SitePolicy.hostOf(it) }) {
+            buildList {
+                add(PanelItem("Chuyển tới tab này", R.drawable.ic_open) {
+                    tabs.select(tab)
+                    enterPageMode()
+                })
+                if (tabs.tabs.size > 1) {
+                    add(PanelItem("Đóng tab", R.drawable.ic_close, keepOpen = true) {
+                        tabs.close(tab)
+                        panel.back()
+                    })
+                }
+            }
+        }
     }
 
     private fun toggleBookmark() {
@@ -877,109 +957,145 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             showToast("Đã xóa khỏi bookmark")
         } else {
             bookmarks.add(url, currentTab?.title)
-            showToast("Đã thêm vào bookmark — hiện trên Trang chủ")
+            showToast("★ Đã thêm vào bookmark — hiện trên Trang chủ")
         }
         updateBookmarkButton()
     }
 
     private fun showBookmarksMenu() {
-        val all = bookmarks.all()
-        if (all.isEmpty()) {
-            showToast("Chưa có bookmark. Mở thanh địa chỉ và bấm ☆ để thêm trang.")
+        if (bookmarks.all().isEmpty()) {
+            showToast("Chưa có bookmark. Mở Menu trên một trang và chọn \"Thêm bookmark\".")
             return
         }
-        showMenu("Bookmark (${all.size})", all.map { link ->
-            MenuItem("${link.title.take(50)}  ·  ${SitePolicy.hostOf(link.url) ?: ""}") {
-                showMenu(link.title.take(60), listOf(
-                    MenuItem("Mở") { currentSession?.loadUri(link.url) },
-                    MenuItem("Mở trong tab mới") { tabs.newTab(link.url, settings.desktopModeDefault) },
-                    MenuItem("Xóa bookmark") {
-                        bookmarks.remove(link.url)
-                        updateBookmarkButton()
-                    },
-                ))
-            }
-        })
+        beforePanel()
+        panel.push("Bookmark", "Hiện trên Trang chủ") {
+            listOf(PanelSection(null, bookmarks.all().map { link ->
+                PanelItem(link.title.take(60), R.drawable.ic_star, value = SitePolicy.hostOf(link.url)) {
+                    panel.menu(link.title.take(60), SitePolicy.hostOf(link.url)) {
+                        listOf(
+                            PanelItem("Mở", R.drawable.ic_open) { currentSession?.loadUri(link.url) },
+                            PanelItem("Mở trong tab mới", R.drawable.ic_add) { tabs.newTab(link.url, settings.desktopModeDefault) },
+                            PanelItem("Xóa bookmark", R.drawable.ic_close, keepOpen = true) {
+                                bookmarks.remove(link.url)
+                                updateBookmarkButton()
+                                if (bookmarks.all().isEmpty()) panel.hide() else panel.back()
+                            },
+                        )
+                    }
+                }
+            }))
+        }
     }
 
     private fun showHistoryMenu() {
-        val all = history.all()
-        if (all.isEmpty()) {
+        if (history.all().isEmpty()) {
             showToast("Lịch sử trống")
             return
         }
-        val items = mutableListOf(MenuItem("🗑 Xóa toàn bộ lịch sử") {
-            showConfirm("Xóa lịch sử?", "Toàn bộ ${all.size} trang đã xem sẽ bị xóa.", "Xóa") { history.clear() }
-        })
-        all.take(100).forEach { link ->
-            items += MenuItem("${link.title.take(50)}  ·  ${SitePolicy.hostOf(link.url) ?: ""}") { currentSession?.loadUri(link.url) }
+        beforePanel()
+        panel.push("Lịch sử", "100 trang gần nhất") {
+            val all = history.all()
+            listOf(
+                PanelSection(null, listOf(PanelItem("Xóa toàn bộ lịch sử", R.drawable.ic_clean) {
+                    panel.confirm("Xóa lịch sử?", "Toàn bộ ${all.size} trang đã xem sẽ bị xóa.", "Xóa", R.drawable.ic_clean) {
+                        history.clear()
+                        showToast("Đã xóa lịch sử")
+                    }
+                })),
+                PanelSection("Gần đây", all.take(100).map { link ->
+                    PanelItem(link.title.take(60), R.drawable.ic_history, value = SitePolicy.hostOf(link.url)) { currentSession?.loadUri(link.url) }
+                }),
+            )
         }
-        showMenu("Lịch sử", items)
     }
 
     private fun showSettingsMenu() {
-        val items = listOf(
-            MenuItem("Công cụ tìm kiếm: ${settings.searchEngine.label}") {
-                showChoice("Công cụ tìm kiếm", SearchEngine.entries, settings.searchEngine, { it.label }) {
-                    settings.searchEngine = it
-                }
-            },
-            MenuItem("Mở tab mới ở chế độ: ${if (settings.desktopModeDefault) "Desktop" else "Mobile"}") {
-                settings.desktopModeDefault = !settings.desktopModeDefault
-                showToast("Tab mới sẽ mở ở chế độ ${if (settings.desktopModeDefault) "Desktop" else "Mobile"}")
-            },
-            MenuItem("Cỡ chữ trang web: ${(settings.fontScale * 100).toInt()}%") {
-                val options = listOf(1.0f, 1.25f, 1.5f, 1.75f)
-                showChoice("Cỡ chữ trang web", options, settings.fontScale, { "${(it * 100).toInt()}%" }) {
-                    settings.fontScale = it
-                    BrowserRuntime.setFontScale(it)
-                    currentSession?.reload()
-                }
-            },
-            MenuItem("Điều khiển: ${settings.navMode.label}") {
-                showChoice("Cách điều khiển bằng remote", NavMode.entries, settings.navMode, { it.label }) {
-                    setNavMode(it)
-                }
-            },
-            MenuItem("DNS chặn quảng cáo (AdGuard): ${if (settings.adBlockDns) "BẬT" else "TẮT"}") {
-                settings.adBlockDns = !settings.adBlockDns
-                BrowserRuntime.setAdBlockDns(settings.adBlockDns)
-                showToast("DNS chặn quảng cáo: ${if (settings.adBlockDns) "BẬT" else "TẮT"}")
-            },
-            MenuItem("Cập nhật bộ lọc quảng cáo ngay") {
-                UblockBridge.updateFilters { ok ->
-                    showToast(if (ok) "Đang tải bộ lọc mới trong nền…" else getString(R.string.ublock_loading))
-                }
-            },
-            MenuItem("Chế độ RAM thấp (box 1GB): ${settings.lowRamMode.label}${if (BrowserRuntime.isLowRam) " · đang BẬT" else ""}") {
-                showChoice("Chế độ RAM thấp", DeviceProfile.LowRamMode.entries, settings.lowRamMode, { it.label }) { mode ->
-                    settings.lowRamMode = mode
-                    val wanted = DeviceProfile.isLowRam(this)
-                    UblockBridge.lowMemoryLists = wanted // bộ lọc gọn áp dụng ngay
-                    if (wanted != BrowserRuntime.isLowRam) {
-                        showConfirm(
-                            "Khởi động lại Phim275?",
-                            "Cần mở lại app để áp dụng đầy đủ chế độ RAM thấp (bộ nhớ đệm, số tab).",
-                            "Mở lại",
-                        ) { restartApp() }
-                    }
-                }
-            },
-            MenuItem("Mở lại các tab lần trước khi khởi động: ${if (settings.restoreTabs) "BẬT" else "TẮT"}") {
-                settings.restoreTabs = !settings.restoreTabs
-                showToast("Mở lại tab lần trước: ${if (settings.restoreTabs) "BẬT" else "TẮT"}")
-            },
-            MenuItem("Tự kiểm tra bản mới mỗi ngày: ${if (settings.autoUpdateCheck) "BẬT" else "TẮT"}") {
-                settings.autoUpdateCheck = !settings.autoUpdateCheck
-            },
-            MenuItem("Kiểm tra bản cập nhật Phim275 (đang dùng ${BuildConfig.VERSION_NAME})") { checkForUpdates(silent = false) },
-            MenuItem("Xóa dữ liệu duyệt web (cookie, bộ nhớ đệm, lịch sử)") {
-                showConfirm("Xóa dữ liệu duyệt web?", "Bạn sẽ bị đăng xuất khỏi các trang web.", "Xóa") { clearBrowsingData() }
-            },
-            MenuItem("Cài đặt nâng cao bộ chặn quảng cáo (uBlock Origin)") { openUblockPage("dashboard.html#3p-filters.html") },
-            MenuItem("Giới thiệu & giấy phép mã nguồn mở") { tabs.newTab(ABOUT_URL, desktopMode = true) },
-        )
-        showMenu("Cài đặt", items)
+        beforePanel()
+        panel.push("Cài đặt", "Phim275 ${BuildConfig.VERSION_NAME}") {
+            listOf(
+                PanelSection("Duyệt web", listOf(
+                    PanelItem("Công cụ tìm kiếm", R.drawable.ic_search, value = settings.searchEngine.label) {
+                        panel.choose("Công cụ tìm kiếm", null, SearchEngine.entries, { settings.searchEngine }, { it.label }) {
+                            settings.searchEngine = it
+                        }
+                    },
+                    navModeItem(),
+                    PanelItem(
+                        "Tab mới mở dạng",
+                        if (settings.desktopModeDefault) R.drawable.ic_desktop else R.drawable.ic_phone,
+                        value = if (settings.desktopModeDefault) "Desktop" else "Mobile",
+                        keepOpen = true,
+                    ) {
+                        settings.desktopModeDefault = !settings.desktopModeDefault
+                        panel.refresh()
+                    },
+                    PanelItem("Cỡ chữ trang web", R.drawable.ic_keyboard, value = "${(settings.fontScale * 100).toInt()}%") {
+                        panel.choose(
+                            "Cỡ chữ trang web", "Trang đang xem sẽ tải lại",
+                            listOf(1.0f, 1.25f, 1.5f, 1.75f), { settings.fontScale }, { "${(it * 100).toInt()}%" },
+                        ) {
+                            settings.fontScale = it
+                            BrowserRuntime.setFontScale(it)
+                            currentSession?.reload()
+                        }
+                    },
+                )),
+                PanelSection("Chặn quảng cáo", listOf(
+                    PanelItem("DNS chặn quảng cáo (AdGuard)", R.drawable.ic_shield, on = settings.adBlockDns, keepOpen = true) {
+                        settings.adBlockDns = !settings.adBlockDns
+                        BrowserRuntime.setAdBlockDns(settings.adBlockDns)
+                        panel.refresh()
+                    },
+                    PanelItem("Cập nhật bộ lọc ngay", R.drawable.ic_refresh) {
+                        UblockBridge.updateFilters { ok ->
+                            showToast(if (ok) "Đang tải bộ lọc mới trong nền…" else getString(R.string.ublock_loading))
+                        }
+                    },
+                    PanelItem("Cài đặt nâng cao (uBlock Origin)", R.drawable.ic_tune) { openUblockPage("dashboard.html#3p-filters.html") },
+                )),
+                PanelSection("Hiệu năng", listOf(
+                    PanelItem(
+                        "Chế độ RAM thấp (box 1GB)", R.drawable.ic_chart,
+                        value = settings.lowRamMode.label + if (BrowserRuntime.isLowRam) " · đang bật" else "",
+                    ) {
+                        panel.choose(
+                            "Chế độ RAM thấp", "Tự động: bật khi TV có dưới 1,5GB RAM",
+                            DeviceProfile.LowRamMode.entries, { settings.lowRamMode }, { it.label },
+                        ) { mode ->
+                            settings.lowRamMode = mode
+                            val wanted = DeviceProfile.isLowRam(this)
+                            UblockBridge.lowMemoryLists = wanted // bộ lọc gọn áp dụng ngay
+                            if (wanted != BrowserRuntime.isLowRam) {
+                                panel.confirm(
+                                    "Khởi động lại Phim275?",
+                                    "Cần mở lại app để áp dụng đầy đủ chế độ RAM thấp (bộ nhớ đệm, số tab).",
+                                    "Mở lại ngay",
+                                    R.drawable.ic_refresh,
+                                ) { restartApp() }
+                            }
+                        }
+                    },
+                    PanelItem("Mở lại tab lần trước", R.drawable.ic_tabs, on = settings.restoreTabs, keepOpen = true) {
+                        settings.restoreTabs = !settings.restoreTabs
+                        panel.refresh()
+                    },
+                )),
+                PanelSection("Cập nhật & dữ liệu", listOf(
+                    PanelItem("Tự kiểm tra bản mới mỗi ngày", R.drawable.ic_update, on = settings.autoUpdateCheck, keepOpen = true) {
+                        settings.autoUpdateCheck = !settings.autoUpdateCheck
+                        panel.refresh()
+                    },
+                    PanelItem("Kiểm tra bản cập nhật", R.drawable.ic_update, value = BuildConfig.VERSION_NAME) { checkForUpdates(silent = false) },
+                    PanelItem("Xóa cookie & bộ nhớ đệm", R.drawable.ic_clean) {
+                        panel.confirm("Xóa dữ liệu duyệt web?", "Bạn sẽ bị đăng xuất khỏi các trang web.", "Xóa", R.drawable.ic_clean) {
+                            clearBrowsingData()
+                        }
+                    },
+                    PanelItem("Xem lại hướng dẫn", R.drawable.ic_info) { showOnboarding() },
+                    PanelItem("Giới thiệu & giấy phép", R.drawable.ic_info) { tabs.newTab(ABOUT_URL, desktopMode = true) },
+                )),
+            )
+        }
     }
 
     private fun setSiteAdBlock(url: String, enabled: Boolean) {
@@ -1082,11 +1198,15 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         updater.check { result ->
             settings.lastUpdateCheckMs = System.currentTimeMillis()
             when (result) {
-                is UpdateManager.CheckResult.Available -> showConfirm(
-                    "Có bản mới: Phim275 ${result.info.versionName}",
-                    "Bạn đang dùng ${BuildConfig.VERSION_NAME}. Tải và cài bản mới ngay? (khoảng 90MB)",
-                    "Cập nhật",
-                ) { startUpdate(result.apk) }
+                is UpdateManager.CheckResult.Available -> {
+                    beforePanel()
+                    panel.confirm(
+                        "Có bản mới: Phim275 ${result.info.versionName}",
+                        "Bạn đang dùng ${BuildConfig.VERSION_NAME}. Tải và cài bản mới ngay? (khoảng 90MB)",
+                        "Cập nhật ngay",
+                        R.drawable.ic_update,
+                    ) { startUpdate(result.apk) }
+                }
                 UpdateManager.CheckResult.UpToDate -> if (!silent) showToast("Bạn đang dùng bản mới nhất (${BuildConfig.VERSION_NAME})")
                 is UpdateManager.CheckResult.Failed -> if (!silent) showToast("Không kiểm tra được: ${result.message}")
             }
@@ -1205,6 +1325,28 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
+        // Hướng dẫn lần đầu: Back hoặc OK đều đóng.
+        if (onboarding != null) {
+            if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_MENU) {
+                if (event.action == KeyEvent.ACTION_UP) hideOnboarding()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
+        // Bảng menu đang mở: Back = lùi một cấp, Menu = đóng; phím khác do bảng xử lý (▲▼ OK).
+        if (panel.isShowing) {
+            when (code) {
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_UP) panel.back()
+                    return true
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    if (event.action == KeyEvent.ACTION_UP) panel.hide()
+                    return true
+                }
+            }
+            return super.dispatchKeyEvent(event)
+        }
         if (isToolbarMode()) {
             when (code) {
                 KeyEvent.KEYCODE_BACK -> {
@@ -1471,9 +1613,114 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
+    /** Thông báo ngắn ở cuối màn hình (thay Toast: Toast trên TV kèm icon app, lệch tông giao diện). */
     private fun showToast(text: String) {
-        toast?.cancel()
-        toast = Toast.makeText(this, text, Toast.LENGTH_SHORT).also { it.show() }
+        if (panel.isShowing) return // bảng đang mở đã thể hiện kết quả; tránh chữ đè lên bảng
+        handler.removeCallbacks(hideSnackbar)
+        snackbar.text = text
+        if (snackbar.visibility != View.VISIBLE) {
+            snackbar.alpha = 0f
+            snackbar.translationY = dp(16f)
+            snackbar.visibility = View.VISIBLE
+        }
+        snackbar.animate().alpha(1f).translationY(0f).setDuration(160).start()
+        handler.postDelayed(hideSnackbar, (SNACKBAR_BASE_MS + text.length * SNACKBAR_PER_CHAR_MS).coerceAtMost(SNACKBAR_MAX_MS))
+    }
+
+    private val hideSnackbar = Runnable {
+        snackbar.animate().alpha(0f).translationY(dp(16f)).setDuration(200).withEndAction {
+            snackbar.visibility = View.GONE
+        }.start()
+    }
+
+    private fun dp(v: Float) = v * resources.displayMetrics.density
+
+    /** Ô địa chỉ: 🔒 + tên miền đậm + đường dẫn mờ (đọc nhanh từ xa); trang chủ → icon tìm kiếm + gợi ý. */
+    private fun renderUrlBar(url: String?) {
+        val shown = displayUrl(url)
+        val icon = when {
+            shown.isEmpty() -> R.drawable.ic_search
+            shown.startsWith("https://") -> R.drawable.ic_lock
+            else -> R.drawable.ic_info
+        }
+        setStartIcon(urlBar, icon, if (icon == R.drawable.ic_lock) R.color.ok else R.color.text_dim)
+        if (shown.isEmpty()) {
+            urlBar.text = ""
+            return
+        }
+        val bare = shown.removePrefix("https://").removePrefix("http://").removePrefix("www.")
+        val hostEnd = bare.indexOf('/').let { if (it < 0) bare.length else it }
+        urlBar.text = SpannableString(bare).apply {
+            setSpan(ForegroundColorSpan(getColor(R.color.text)), 0, hostEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(StyleSpan(Typeface.BOLD), 0, hostEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun setStartIcon(view: TextView, icon: Int, tint: Int) {
+        val size = dp(20f).toInt()
+        val d = getDrawable(icon)?.mutate()?.apply {
+            setBounds(0, 0, size, size)
+            setTint(getColor(tint))
+        }
+        view.setCompoundDrawablesRelative(d, null, null, null)
+    }
+
+    // ───────────────────────────── Hướng dẫn lần đầu ─────────────────────────────
+
+    private var onboarding: View? = null
+
+    private fun showOnboarding() {
+        if (onboarding != null) return
+        beforePanel()
+        val root = findViewById<ViewGroup>(R.id.root)
+        val view = layoutInflater.inflate(R.layout.view_onboarding, root, false)
+        val rows = view.findViewById<LinearLayout>(R.id.onboarding_rows)
+        val tips = listOf(
+            Triple(R.drawable.ic_grid, "◀ ▲ ▶ ▼", "Chuyển giữa các khối trên trang (viền đỏ)"),
+            Triple(R.drawable.ic_check, "OK", "Bấm vào khối · trên video: bấm OK 2 lần để xem toàn màn hình"),
+            Triple(R.drawable.ic_menu, "Menu / giữ Back", "Thanh địa chỉ, tab, bookmark, cài đặt"),
+            Triple(R.drawable.ic_open, "Giữ OK", "Menu của khối: mở trong tab mới, thêm bookmark…"),
+            Triple(R.drawable.ic_shield, "Tự động", "Chặn quảng cáo, popup và trang bắt tắt trình chặn"),
+        )
+        tips.forEach { (icon, key, desc) ->
+            rows.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(7f).toInt(), 0, dp(7f).toInt())
+                addView(ImageView(context).apply {
+                    setImageResource(icon)
+                    imageTintList = ColorStateList.valueOf(getColor(R.color.accent))
+                }, LinearLayout.LayoutParams(dp(24f).toInt(), dp(24f).toInt()).apply { marginEnd = dp(16f).toInt() })
+                addView(TextView(context).apply {
+                    text = key
+                    setTextColor(getColor(R.color.text))
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+                    paint.isFakeBoldText = true
+                }, LinearLayout.LayoutParams(dp(160f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(TextView(context).apply {
+                    text = desc
+                    setTextColor(getColor(R.color.text_dim))
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            })
+        }
+        val start = view.findViewById<View>(R.id.onboarding_start)
+        start.setOnClickListener { hideOnboarding() }
+        root.addView(view)
+        onboarding = view
+        view.alpha = 0f
+        view.animate().alpha(1f).setDuration(220).start()
+        start.requestFocus()
+    }
+
+    private fun hideOnboarding() {
+        val view = onboarding ?: return
+        settings.onboardingDone = true
+        onboarding = null
+        view.animate().alpha(0f).setDuration(180).withEndAction {
+            (view.parent as? ViewGroup)?.removeView(view)
+        }.start()
+        geckoView.requestFocus()
     }
 
     companion object {
@@ -1495,5 +1742,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val AUTO_UPDATE_DELAY_MS = 15_000L
         private const val TOP_PUSH_TO_TOOLBAR_PX = 480f
         private const val PAGE_SCROLL_FRACTION = 0.8
+        private const val SNACKBAR_BASE_MS = 2200L
+        private const val SNACKBAR_PER_CHAR_MS = 35L
+        private const val SNACKBAR_MAX_MS = 5000L
     }
 }

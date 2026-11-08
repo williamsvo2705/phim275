@@ -5,34 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phim275</title>
 <style>
-  :root { --bg:#0e1116; --card:#1a2029; --card-hi:#252d39; --accent:#e50914; --text:#f2f4f8; --dim:#9aa4b2; }
+  /* Cùng hệ màu với app (res/values/themes.xml). */
+  :root { --bg:#0b0e13; --surface:#151a22; --surface2:#1e2530; --focus:#2a3342; --accent:#e50914;
+    --text:#f2f4f8; --dim:#9aa4b2; --faint:#6b7585; --divider:#262e3a; }
   * { box-sizing: border-box; }
   html, body { margin:0; background:var(--bg); color:var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 1400px; margin: 0 auto; padding: 44px 56px 64px; }
-  header { display:flex; align-items:center; gap:18px; margin-bottom: 26px; }
-  .logo { width:64px; height:64px; border-radius:50%; background: linear-gradient(135deg, #ff7a18, #e50914);
-    display:grid; place-items:center; font-weight:900; font-size:22px; letter-spacing:-.5px; }
-  h1 { margin:0; font-size:40px; letter-spacing:.5px; }
-  .sub { color:var(--dim); font-size:18px; margin-top:4px; }
-  a.search { display:flex; align-items:center; gap:16px; margin: 6px 0 34px; padding:20px 24px; border-radius:16px;
-    background:var(--card); border:3px solid #2a313c; color:var(--dim); font-size:24px; text-decoration:none; }
-  a.search:hover, a.search:focus { border-color:var(--accent); color:var(--text); outline:none; }
-  a.search .go { margin-left:auto; background:var(--accent); color:#fff; font-weight:700; padding:10px 26px; border-radius:12px; }
-  h2 { font-size:22px; color:var(--dim); font-weight:600; margin: 30px 0 14px; text-transform: uppercase; letter-spacing: 1px; }
-  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap:16px; }
-  a.tile { display:flex; flex-direction:column; justify-content:flex-end; min-height:110px; padding:18px 20px;
-    border-radius:16px; background:var(--card); color:var(--text); text-decoration:none; overflow:hidden;
+  body { background: radial-gradient(1200px 500px at 85% -10%, #2a0d12 0%, transparent 60%), var(--bg); min-height:100vh; }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 40px 40px; }
+
+  header { display:flex; align-items:center; gap:14px; margin-bottom: 20px; }
+  .logo { width:46px; height:46px; border-radius:14px; background: linear-gradient(135deg, #ff6a3d, #e50914);
+    display:grid; place-items:center; font-weight:900; font-size:16px; letter-spacing:-.5px; box-shadow: 0 6px 24px #e5091440; }
+  h1 { margin:0; font-size:24px; letter-spacing:.3px; }
+  .sub { color:var(--dim); font-size:13px; margin-top:2px; }
+  .clock { margin-left:auto; text-align:right; }
+  .clock b { display:block; font-size:32px; font-weight:300; letter-spacing:1px; line-height:1; }
+  .clock span { color:var(--dim); font-size:13px; }
+
+  a.search { display:flex; align-items:center; gap:14px; margin: 0 0 8px; padding:0 8px 0 20px; height:56px; border-radius:28px;
+    background:var(--surface); border:2px solid var(--divider); color:var(--dim); font-size:17px; text-decoration:none;
+    transition: border-color .12s, background .12s; }
+  a.search:focus, a.search:hover { border-color:var(--accent); background:var(--focus); color:var(--text); outline:none; }
+  a.search svg { width:24px; height:24px; fill:currentColor; flex:none; }
+  a.search .go { margin-left:auto; background:var(--accent); color:#fff; font-weight:700; font-size:15px; padding:9px 22px; border-radius:20px; }
+  .hint { color:var(--faint); font-size:12px; margin: 0 0 4px 22px; }
+
+  h2 { font-size:12px; color:var(--faint); font-weight:700; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 1.5px; }
+  section[hidden] { display:none; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px; }
+  a.tile { display:flex; align-items:center; gap:12px; height:64px; padding:0 12px; border-radius:12px;
+    background:var(--surface); color:var(--text); text-decoration:none; overflow:hidden;
     border:3px solid transparent; transition: transform .12s, background .12s, border-color .12s; }
-  a.tile:hover, a.tile:focus { background:var(--card-hi); border-color:var(--accent); transform: scale(1.04); outline:none; }
-  .tile b { font-size:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .tile span { color:var(--dim); font-size:15px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .tile.star { border-color:#3a2a10; }
-  #bookmarks-section[hidden], #recent-section[hidden] { display:none; }
-  .tile.recent { border-color:#2a3442; }
-  .help { margin-top:44px; padding:20px 24px; border-radius:16px; background:#141922; color:var(--dim);
-    font-size:18px; line-height:1.7; }
-  kbd { background:#2a313c; color:var(--text); border-radius:6px; padding:2px 9px; font-family:inherit; }
+  a.tile:focus, a.tile:hover { background:var(--focus); border-color:var(--accent); transform: scale(1.03); outline:none; }
+  .av { flex:none; width:38px; height:38px; border-radius:10px; display:grid; place-items:center;
+    font-weight:800; font-size:18px; color:#fff; text-transform:uppercase; }
+  .tx { min-width:0; display:flex; flex-direction:column; }
+  .tx b { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tx span { color:var(--dim); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .recent .av::after { content:"▶"; font-size:14px; }
+  .recent .av { font-size:0; }
+
+  footer { margin-top:32px; padding-top:16px; border-top:1px solid var(--divider); color:var(--faint);
+    font-size:12px; line-height:2.1; }
+  kbd { background:var(--surface2); color:var(--text); border-radius:6px; padding:2px 8px; font-family:inherit; font-size:12px; }
 </style>
 </head>
 <body>
@@ -40,88 +56,116 @@
   <header>
     <div class="logo">275</div>
     <div>
-      <h1>Phim275</h1>
-      <div class="sub">Trình duyệt chặn quảng cáo cho Android TV</div>
+      <h1 id="greeting">Phim275</h1>
+      <div class="sub">Không quảng cáo · không popup</div>
     </div>
+    <div class="clock"><b id="time">--:--</b><span id="date"></span></div>
   </header>
 
   <!-- Bấm vào đây: app mở hộp nhập chữ riêng (luôn hiện được bàn phím TV). -->
-  <a class="search" href="phim275://search">🔍 <span id="search-label">Tìm kiếm Google hoặc nhập địa chỉ…</span><span class="go">Tìm</span></a>
+  <a class="search" href="phim275://search">
+    <svg viewBox="0 0 24 24"><path d="M15.5,14h-0.79l-0.28,-0.27C15.41,12.59 16,11.11 16,9.5 16,5.91 13.09,3 9.5,3S3,5.91 3,9.5 5.91,16 9.5,16c1.61,0 3.09,-0.59 4.23,-1.57l0.27,0.28v0.79l5,4.99L20.49,19l-4.99,-5zM9.5,14C7.01,14 5,11.99 5,9.5S7.01,5 9.5,5 14,7.01 14,9.5 11.99,14 9.5,14z"/></svg>
+    <span id="search-label">Tìm kiếm Google hoặc nhập địa chỉ…</span><span class="go">Tìm</span>
+  </a>
+  <div class="hint">Mẹo: nút 🎤 trên remote để tìm bằng giọng nói</div>
 
   <section id="recent-section" hidden>
-    <h2>▶ Xem gần đây</h2>
+    <h2>Xem tiếp</h2>
     <div class="grid" id="recent"></div>
   </section>
 
   <section id="bookmarks-section" hidden>
-    <h2>★ Bookmark của bạn</h2>
+    <h2>Bookmark</h2>
     <div class="grid" id="bookmarks"></div>
   </section>
 
-  <h2>Trang phim</h2>
-  <div class="grid">
-    <a class="tile" href="https://cobephim.my/"><b>Cobephim</b><span>cobephim.my</span></a>
-    <a class="tile" href="https://www.youtube.com/"><b>YouTube</b><span>youtube.com</span></a>
-    <a class="tile" href="https://www.dailymotion.com/"><b>Dailymotion</b><span>dailymotion.com</span></a>
+  <h2>Xem phim &amp; video</h2>
+  <div class="grid" data-sites>
+    <a class="tile" href="https://cobephim.my/" data-name="Cobephim"></a>
+    <a class="tile" href="https://www.youtube.com/" data-name="YouTube"></a>
+    <a class="tile" href="https://www.dailymotion.com/" data-name="Dailymotion"></a>
   </div>
 
   <h2>Tin tức &amp; thể thao</h2>
-  <div class="grid">
-    <a class="tile" href="https://vnexpress.net/"><b>VnExpress</b><span>vnexpress.net</span></a>
-    <a class="tile" href="https://www.24h.com.vn/"><b>24h</b><span>24h.com.vn</span></a>
-    <a class="tile" href="https://kenh14.vn/"><b>Kênh 14</b><span>kenh14.vn</span></a>
-    <a class="tile" href="https://dantri.com.vn/"><b>Dân trí</b><span>dantri.com.vn</span></a>
-    <a class="tile" href="https://bongda.com.vn/"><b>Bóng Đá</b><span>bongda.com.vn</span></a>
+  <div class="grid" data-sites>
+    <a class="tile" href="https://vnexpress.net/" data-name="VnExpress"></a>
+    <a class="tile" href="https://www.24h.com.vn/" data-name="24h"></a>
+    <a class="tile" href="https://kenh14.vn/" data-name="Kênh 14"></a>
+    <a class="tile" href="https://dantri.com.vn/" data-name="Dân trí"></a>
+    <a class="tile" href="https://bongda.com.vn/" data-name="Bóng Đá"></a>
   </div>
 
-  <h2>Phim275</h2>
-  <div class="grid">
-    <a class="tile" href="phim275://update"><b>⟳ Kiểm tra bản mới</b><span>tải &amp; cài ngay trong app</span></a>
-    <a class="tile" href="https://phim275.vercel.app/"><b>Trang Phim275</b><span>phim275.vercel.app</span></a>
+  <h2>Tiện ích</h2>
+  <div class="grid" data-sites>
+    <a class="tile" href="phim275://update" data-name="Kiểm tra bản mới" data-sub="Tải & cài ngay trong app" data-letter="⟳" data-color="#e50914"></a>
+    <a class="tile" href="https://phim275.vercel.app/" data-name="Trang Phim275" data-letter="275" data-color="#c2410c"></a>
+    <a class="tile" href="https://adblock-tester.com/" data-name="AdBlock Tester" data-sub="Chấm điểm chặn quảng cáo /100"></a>
+    <a class="tile" href="https://canyoublockit.com/extreme-test/" data-name="Can You Block It" data-sub="Thử popup, video quảng cáo"></a>
   </div>
 
-  <h2>Kiểm tra chặn quảng cáo</h2>
-  <div class="grid">
-    <a class="tile" href="https://adblock-tester.com/"><b>AdBlock Tester</b><span>Chấm điểm /100</span></a>
-    <a class="tile" href="https://canyoublockit.com/extreme-test/"><b>Can You Block It</b><span>Popup, video</span></a>
-    <a class="tile" href="https://blockads.fivefilters.org/"><b>FiveFilters</b><span>Tên miền quảng cáo</span></a>
-  </div>
-
-  <div class="help">
-    <b style="color:var(--text)">Cách dùng remote</b><br>
-    <kbd>◀ ▲ ▶ ▼</kbd> di chuyển con trỏ (giữ để chạy nhanh, chạm mép để cuộn) ·
-    <kbd>OK</kbd> bấm · <kbd>Giữ OK</kbd> menu chuột phải ·
-    <kbd>Back</kbd> quay lại · <kbd>Giữ Back</kbd> / <kbd>Menu</kbd> / đẩy con trỏ lên mép trên → thanh địa chỉ
-    (☆ bookmark, Tab, ☰ Menu) · <kbd>CH+ / CH−</kbd> cuộn nhanh
-  </div>
+  <footer>
+    <kbd>◀ ▲ ▶ ▼</kbd> chọn khối &nbsp; <kbd>OK</kbd> bấm &nbsp; <kbd>OK ×2</kbd> video toàn màn hình &nbsp;
+    <kbd>Giữ OK</kbd> menu của khối &nbsp; <kbd>Menu</kbd> / <kbd>Giữ Back</kbd> thanh địa chỉ &nbsp;
+    <kbd>CH+ CH−</kbd> cuộn nhanh
+  </footer>
 </main>
 <script>
-  // App truyền dữ liệu qua #hash: {s: mẫu tìm kiếm, n: tên công cụ, b: [{u, t}] bookmark}
+  // App truyền dữ liệu qua #hash: {s: mẫu tìm kiếm, n: tên công cụ, b: bookmark [{u, t}], r: xem gần đây [{u, t}]}
+  var PALETTE = ["#e50914", "#2563eb", "#059669", "#d97706", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#c2410c", "#4f46e5"];
   function host(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } }
-  function render() {
-    var data = {};
-    try { data = JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}"); } catch (e) {}
-    if (data.n) document.getElementById("search-label").textContent = "Tìm kiếm " + data.n + " hoặc nhập địa chỉ…";
-    fill("bookmarks", "tile star", data.b);
-    fill("recent", "tile recent", data.r);
+  function colorOf(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return PALETTE[Math.abs(h) % PALETTE.length];
+  }
+  function fillTile(a, name, sub, letter, color) {
+    a.textContent = "";
+    var av = document.createElement("div");
+    av.className = "av";
+    av.style.background = color || colorOf(host(a.href));
+    av.textContent = letter || (name || "?").trim().charAt(0);
+    if (av.textContent.length > 1) av.style.fontSize = "13px";
+    var tx = document.createElement("div"); tx.className = "tx";
+    var b = document.createElement("b"); b.textContent = name;
+    var s = document.createElement("span"); s.textContent = sub;
+    tx.appendChild(b); tx.appendChild(s);
+    a.appendChild(av); a.appendChild(tx);
   }
   function fill(id, cls, links) {
     var list = Array.isArray(links) ? links : [];
     var grid = document.getElementById(id);
     grid.textContent = "";
-    list.forEach(function (b) {
+    list.forEach(function (link) {
       var a = document.createElement("a");
       a.className = cls;
-      a.href = b.u;
-      var t = document.createElement("b"); t.textContent = b.t || host(b.u);
-      var s = document.createElement("span"); s.textContent = host(b.u);
-      a.appendChild(t); a.appendChild(s);
+      a.href = link.u;
+      fillTile(a, link.t || host(link.u), host(link.u));
       grid.appendChild(a);
     });
     document.getElementById(id + "-section").hidden = list.length === 0;
   }
+  function render() {
+    var data = {};
+    try { data = JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}"); } catch (e) {}
+    if (data.n) document.getElementById("search-label").textContent = "Tìm kiếm " + data.n + " hoặc nhập địa chỉ…";
+    fill("recent", "tile recent", data.r);
+    fill("bookmarks", "tile", data.b);
+  }
+  var DAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+  function tick() {
+    var d = new Date(), h = d.getHours(), m = d.getMinutes();
+    document.getElementById("time").textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+    document.getElementById("date").textContent = DAYS[d.getDay()] + ", " + d.getDate() + "/" + (d.getMonth() + 1);
+    document.getElementById("greeting").textContent =
+      h < 11 ? "Chào buổi sáng" : h < 14 ? "Chào buổi trưa" : h < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+  }
+  document.querySelectorAll("[data-sites] a").forEach(function (a) {
+    fillTile(a, a.dataset.name, a.dataset.sub || host(a.href), a.dataset.letter, a.dataset.color);
+  });
   window.addEventListener("hashchange", render);
   render();
+  tick();
+  setInterval(tick, 30000);
 </script>
 <!-- Điều hướng chuyển khối bằng phím mũi tên (extension không chạy trên trang nội bộ nên nạp trực tiếp). -->
 <script src="../extensions/tvnav/content.js"></script>
