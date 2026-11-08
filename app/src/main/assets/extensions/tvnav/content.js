@@ -46,6 +46,8 @@
     const NON_TEXT_INPUT = /^(button|submit|checkbox|radio|range|color|file|image|reset)$/i;
 
     const DOUBLE_PRESS_MS = 420;
+    const SETTLE_MS = 350;              // chờ DOM ngừng thay đổi sau khi trang SPA chuyển nội dung
+    const PLAYER_MIN_AREA = 0.18;       // trình phát chiếm ≥ 18% màn hình mới tính là "trang xem phim"
     const MEDIA_HINT_HIDE_MS = 3000;
 
     let cache = null;
@@ -64,9 +66,40 @@
         return el.querySelector('video, iframe') !== null;
     }
 
-    new MutationObserver(( ) => { cache = null; }).observe(document.documentElement, {
+    // Trang SPA (Next.js, React…) đổi nội dung mà không tải lại: khối đang chọn có thể bị gỡ khỏi DOM.
+    let lastHref = location.href;
+    let settleTimer = null;
+    new MutationObserver(( ) => {
+        cache = null;
+        if ( settleTimer === null ) { settleTimer = setTimeout(onDomSettled, SETTLE_MS); }
+    }).observe(document.documentElement, {
         childList: true, subtree: true, attributes: true, attributeFilter: [ 'class', 'style', 'hidden', 'href' ],
     });
+
+    function onDomSettled() {
+        settleTimer = null;
+        if ( current !== null && !isAlive(current) ) {
+            current = null;
+            drawOverlay();
+        }
+        if ( location.href !== lastHref ) {
+            lastHref = location.href;
+            schedulePlayerPick();
+        }
+    }
+
+    // Trình phát thường nạp sau nội dung trang → thử lại vài lần (bỏ qua nếu người dùng đã chọn khối khác).
+    const PLAYER_RETRY_MS = [ 0, 1200, 3000 ];
+    function schedulePlayerPick() {
+        for ( const ms of PLAYER_RETRY_MS ) { setTimeout(autoSelectPlayer, ms); }
+    }
+
+    /** Trang có trình phát lớn trên màn hình (trang xem phim) → chọn sẵn: OK là phát, OK × 2 toàn màn hình. */
+    function autoSelectPlayer() {
+        if ( isFullscreen() || (current !== null && isAlive(current)) ) { return; }
+        const player = findPlayer();
+        if ( player !== null ) { select(player); }
+    }
 
     const area = r => r.width * r.height;
 
@@ -83,9 +116,43 @@
         if ( cx >= 0 && cx < vw && cy >= 0 && cy < vh ) {
             const hit = document.elementFromPoint(cx, cy);
             if ( hit === null ) { return false; }
-            if ( hit !== el && !el.contains(hit) && !hit.contains(el) ) { return false; }
+            if ( hit !== el && !el.contains(hit) && !hit.contains(el) && !sameWidget(el, hit, r) ) { return false; }
         }
         return true;
+    }
+
+    /** Còn trên trang và còn kích thước (không kiểm tra bị che: dùng cho khối đang chọn). */
+    function isAlive(el) {
+        if ( !el.isConnected ) { return false; }
+        const r = el.getBoundingClientRect();
+        return r.width >= 6 && r.height >= 6;
+    }
+
+    /** Video/iframe bị lớp điều khiển của chính trình phát che (nút ▶ to giữa khung) vẫn chọn được. */
+    function sameWidget(el, hit, r) {
+        if ( el.tagName !== 'VIDEO' && el.tagName !== 'IFRAME' ) { return false; }
+        for ( let p = el.parentElement; p !== null; p = p.parentElement ) {
+            if ( area(p.getBoundingClientRect()) > area(r) * 1.6 ) { return false; }
+            if ( p.contains(hit) ) { return true; }
+        }
+        return false;
+    }
+
+    /** Video/iframe lớn nhất đang nằm trong màn hình (đủ lớn để là trình phát chính). */
+    function findPlayer() {
+        const vw = innerWidth, vh = innerHeight;
+        let best = null, bestArea = vw * vh * PLAYER_MIN_AREA;
+        for ( const el of document.querySelectorAll('video, iframe') ) {
+            const r = el.getBoundingClientRect();
+            const w = Math.min(r.right, vw) - Math.max(r.left, 0);
+            const h = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+            if ( w <= 0 || h <= 0 || w * h < bestArea ) { continue; }
+            const cs = getComputedStyle(el);
+            if ( cs.visibility === 'hidden' || cs.opacity === '0' ) { continue; }
+            best = el;
+            bestArea = w * h;
+        }
+        return best;
     }
 
     function collect() {
@@ -177,11 +244,9 @@
 
     function move(dir) {
         const list = collect();
-        if ( current !== null && (!current.isConnected || !isUsable(current, current.getBoundingClientRect())) ) {
-            current = null;
-        }
+        if ( current !== null && !isAlive(current) ) { current = null; }
         if ( current === null ) {
-            const first = firstVisible(list);
+            const first = findPlayer() || firstVisible(list);
             if ( first !== null ) { select(first); } else { scrollPage(dir); }
             return;
         }
@@ -320,7 +385,7 @@
 
     function activate() {
         const el = current;
-        if ( el === null ) { return; }
+        if ( el === null || !isAlive(el) ) { return; }
         const r = el.getBoundingClientRect();
         const vv = window.visualViewport;
         const vx = vv ? vv.offsetLeft : 0, vy = vv ? vv.offsetTop : 0;
@@ -387,7 +452,15 @@
             move(dir);
             return true;
         }
-        if ( key !== 'Enter' || editing || current === null ) { return false; }
+        if ( key !== 'Enter' || editing ) { return false; }
+        if ( current !== null && !isAlive(current) ) { current = null; }
+        if ( current === null ) {
+            // Chưa chọn khối (hoặc khối cũ đã bị gỡ khi trang đổi nội dung): chọn khối trước, không bấm mù.
+            const start = findPlayer() || firstVisible(collect());
+            if ( start === null ) { return false; }
+            select(start);
+            return true;
+        }
         if ( !isMediaBlock(current) ) { activate(); return true; }
         // Khối video: OK 1 lần = phát/dừng (chờ chút xem có lần 2), OK 2 lần = toàn màn hình.
         if ( pendingActivate !== null ) {
@@ -399,6 +472,12 @@
             pendingActivate = setTimeout(( ) => { pendingActivate = null; activate(); }, DOUBLE_PRESS_MS);
         }
         return true;
+    }
+
+    if ( document.readyState === 'complete' ) {
+        schedulePlayerPick();
+    } else {
+        addEventListener('load', schedulePlayerPick, { once: true });
     }
 
     addEventListener('keydown', ev => {

@@ -18,6 +18,11 @@
 ! ───────────── Trang Việt Nam ─────────────
 ! (thêm luật theo từng trang khi người dùng báo lỗi)
 
+! Cobephim / RoPhim (cùng mã nguồn Next.js): API /banners trả về script popunder
+! (data-clocid, đổi tên miền liên tục) và banner GIF → chặn tận gốc, trang không còn gì để chèn.
+||darkbytes.xyz/api/v1/banners
+/api/v1/banners$xhr,domain=cobephim.my|rophim.me|rophim.net|rophim.com|rophimm.net
+
 ! ───────────── Vượt anti-adblock ─────────────
 ! (scriptlet theo từng trang, ví dụ:)
 ! example.com##+js(set-constant, adBlockDetected, false)

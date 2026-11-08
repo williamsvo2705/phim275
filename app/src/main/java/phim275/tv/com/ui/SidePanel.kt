@@ -76,7 +76,7 @@ class SidePanel(context: Context) : FrameLayout(context) {
         addView(list, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
-    /** Gọi khi bảng đóng (để Activity trả focus về trang web). */
+    /** Gọi ngay khi bảng bắt đầu đóng (để Activity trả focus về trang web). */
     var onHidden: (() -> Unit)? = null
 
     val isShowing: Boolean get() = visibility == View.VISIBLE && !closing
@@ -108,6 +108,7 @@ class SidePanel(context: Context) : FrameLayout(context) {
         stack.lastOrNull()?.focusIndex = focusedRowIndex()
         stack.addLast(Page(title, subtitle, build))
         pushCounter++
+        descendantFocusability = FOCUS_AFTER_DESCENDANTS
         render(stack.last())
         if (visibility != View.VISIBLE || closing) slideIn()
     }
@@ -133,13 +134,15 @@ class SidePanel(context: Context) : FrameLayout(context) {
         if (!isShowing) return
         closing = true
         stack.clear()
+        // Trả focus về trang ngay: trong 160ms trượt ra, ▼/OK không được rơi vào các dòng đang biến mất.
+        descendantFocusability = FOCUS_BLOCK_DESCENDANTS
+        onHidden?.invoke()
         sheet.animate().translationX(sheet.width.toFloat()).setDuration(160).setInterpolator(null).withEndAction {
             if (closing) {
                 closing = false
                 visibility = View.GONE
                 list.removeAllViews()
                 rows.clear()
-                onHidden?.invoke()
             }
         }.start()
         scrim.animate().alpha(0f).setDuration(160).start()
