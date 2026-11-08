@@ -46,7 +46,8 @@ jobs:
             echo "::error::Thiếu secret PHIM275_KEYSTORE_BASE64 — không phát hành bản ký bằng khóa debug."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/phim275-release.jks"
+          # Bỏ ký tự xuống dòng/khoảng trắng lẫn vào khi tạo secret (vd. từ PowerShell).
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$RUNNER_TEMP/phim275-release.jks"
           echo "PHIM275_STORE_FILE=$RUNNER_TEMP/phim275-release.jks" >> "$GITHUB_ENV"
 
       - name: Test và build release
