@@ -20,12 +20,14 @@ object ErrorPages {
               h1{font-size:40px;margin:12px 0}
               p{font-size:22px;color:#9aa4b2;line-height:1.6}
               code{display:block;margin-top:18px;font-size:17px;color:#f2f4f8;word-break:break-all;opacity:.8}
-              a{display:inline-block;margin-top:28px;padding:18px 36px;border-radius:14px;background:#e50914;
-                color:#fff;text-decoration:none;font-size:24px;font-weight:700}
+              button{margin-top:28px;padding:18px 36px;border-radius:14px;border:4px solid transparent;background:#e50914;
+                color:#fff;font-size:24px;font-weight:700;font-family:inherit}
+              button:focus{border-color:#fff;outline:none}
             </style></head><body><main>
               <div class="icon">⚠️</div><h1>$title</h1><p>$hint</p>
               <code>$safeUrl</code>
-              <a href="$safeUrl">Thử lại</a>
+              <!-- autofocus: ở chế độ chuyển khối chỉ cần bấm OK (Enter) để thử lại. -->
+              <button autofocus data-u="$safeUrl" onclick="location.href=this.dataset.u">⟳ Thử lại</button>
             </main></body></html>
         """.trimIndent()
         return "data:text/html;charset=utf-8;base64," +

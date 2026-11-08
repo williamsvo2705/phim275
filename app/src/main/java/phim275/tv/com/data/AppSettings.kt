@@ -43,6 +43,11 @@ class AppSettings(context: Context) {
         get() = prefs.getFloat(KEY_FONT_SCALE, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_FONT_SCALE, value).apply()
 
+    /** Mở lại các tab của lần trước khi khởi động app. */
+    var restoreTabs: Boolean
+        get() = prefs.getBoolean(KEY_RESTORE_TABS, true)
+        set(value) = prefs.edit().putBoolean(KEY_RESTORE_TABS, value).apply()
+
     var autoUpdateCheck: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_UPDATE, value).apply()
@@ -58,6 +63,7 @@ class AppSettings(context: Context) {
         const val KEY_DNS = "adblock_dns"
         const val KEY_AUTO_UPDATE = "auto_update"
         const val KEY_FONT_SCALE = "font_scale"
+        const val KEY_RESTORE_TABS = "restore_tabs"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     }
 }

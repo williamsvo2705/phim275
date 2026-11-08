@@ -23,6 +23,9 @@ object TvNavBridge {
     /** Nhận (fx, fy) ∈ [0,1] — vị trí cần chạm trên GeckoView. */
     var tapListener: ((Float, Float) -> Unit)? = null
 
+    /** Trang bật/tắt phóng to video bằng CSS (khi trình phát chặn Fullscreen API). */
+    var pseudoFullscreenListener: ((Boolean) -> Unit)? = null
+
     fun install(runtime: GeckoRuntime) {
         runtime.webExtensionController.ensureBuiltIn(EXTENSION_URI, EXTENSION_ID).accept(
             { ext ->
@@ -36,6 +39,11 @@ object TvNavBridge {
     private val delegate = object : WebExtension.MessageDelegate {
         override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
             val json = message as? JSONObject ?: return GeckoResult.fromValue(false)
+            if (json.optString("type") == "pseudoFullscreen") {
+                val on = json.optBoolean("on")
+                main.post { pseudoFullscreenListener?.invoke(on) }
+                return GeckoResult.fromValue(true)
+            }
             if (json.optString("type") != "tap") return GeckoResult.fromValue(false)
             val fx = json.optDouble("fx", -1.0).toFloat()
             val fy = json.optDouble("fy", -1.0).toFloat()

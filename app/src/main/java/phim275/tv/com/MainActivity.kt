@@ -62,7 +62,12 @@ import phim275.tv.com.cursor.CursorView
 import phim275.tv.com.data.AppSettings
 import phim275.tv.com.data.AppSettings.NavMode
 import phim275.tv.com.data.LinkStore
+import phim275.tv.com.data.SavedSession
+import phim275.tv.com.data.SavedTab
 import phim275.tv.com.data.SearchEngine
+import phim275.tv.com.data.SessionCodec
+import phim275.tv.com.data.SessionStore
+import org.mozilla.geckoview.MediaSession
 import phim275.tv.com.diag.CrashLog
 import phim275.tv.com.diag.Diagnostics
 import phim275.tv.com.ui.MenuItem
@@ -90,6 +95,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private lateinit var settings: AppSettings
     private lateinit var bookmarks: LinkStore
     private lateinit var history: LinkStore
+    private lateinit var sessionStore: SessionStore
     private lateinit var diagnostics: Diagnostics
     private lateinit var updater: UpdateManager
     private lateinit var runtime: GeckoRuntime
@@ -97,6 +103,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     private var pageScrollY = 0
     private var fullScreen = false
+    private var pseudoFullscreen = false
+    private var lastFullscreenOkMs = 0L
     private var pageStartMs = 0L
     private var lastBackPressMs = 0L
     private var backLongPressHandled = false
@@ -138,6 +146,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         settings = AppSettings(this)
         bookmarks = LinkStore.bookmarks(this)
         history = LinkStore.history(this)
+        sessionStore = SessionStore(this)
         updater = UpdateManager(this)
         setContentView(R.layout.activity_main)
 
@@ -159,10 +168,59 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         applyNavMode()
         BrowserRuntime.observeUblock(ublockObserver)
         TvNavBridge.tapListener = ::tapAtFraction
+        TvNavBridge.pseudoFullscreenListener = { on ->
+            pseudoFullscreen = on
+            if (on) enterPageMode()
+        }
 
-        tabs.newTab(intent?.dataString ?: homeUrl(), settings.desktopModeDefault)
+        // Mở lại các tab lần trước (sau khi cập nhật / Android đóng app vì thiếu RAM).
+        val saved = if (settings.restoreTabs) sessionStore.load() else null
+        if (saved != null) {
+            tabs.restore(saved.tabs.map { Triple(it.url, it.title, it.desktopMode) }, saved.currentIndex)
+        }
+        val startUrl = intent?.dataString
+        if (startUrl != null) {
+            tabs.newTab(startUrl, settings.desktopModeDefault)
+        } else if (saved == null) {
+            tabs.newTab(homeUrl(), settings.desktopModeDefault)
+        }
         enterPageMode()
         scheduleAutoUpdateCheck()
+    }
+
+    private fun saveSession() {
+        if (!settings.restoreTabs) return
+        val restorable = tabs.tabs.filter { SessionCodec.isRestorable(it.url) }
+        if (restorable.isEmpty()) return
+        val current = restorable.indexOf(currentTab).coerceAtLeast(0)
+        sessionStore.save(SavedSession(restorable.map { SavedTab(it.url!!, it.title, it.desktopMode) }, current))
+    }
+
+    /** Đang phát video → không cho trình bảo vệ màn hình của TV bật lên giữa phim. */
+    private fun keepScreenOn(on: Boolean) {
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    private val mediaSessionDelegate = object : MediaSession.Delegate {
+        override fun onPlay(session: GeckoSession, mediaSession: MediaSession) {
+            if (tabs.isCurrent(session)) keepScreenOn(true)
+        }
+
+        override fun onPause(session: GeckoSession, mediaSession: MediaSession) {
+            if (tabs.isCurrent(session)) keepScreenOn(false)
+        }
+
+        override fun onStop(session: GeckoSession, mediaSession: MediaSession) {
+            if (tabs.isCurrent(session)) keepScreenOn(false)
+        }
+
+        override fun onDeactivated(session: GeckoSession, mediaSession: MediaSession) {
+            if (tabs.isCurrent(session)) keepScreenOn(false)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -176,6 +234,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     }
 
     override fun onPause() {
+        saveSession()
         currentSession?.setActive(false)
         super.onPause()
     }
@@ -189,7 +248,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     override fun onDestroy() {
         BrowserRuntime.removeObserver(ublockObserver)
-        if (TvNavBridge.tapListener != null) TvNavBridge.tapListener = null
+        TvNavBridge.tapListener = null
+        TvNavBridge.pseudoFullscreenListener = null
         handler.removeCallbacksAndMessages(null)
         cursor.release()
         if (isFinishing) tabs.closeAll()
@@ -215,6 +275,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         s.permissionDelegate = permissionDelegate
         s.promptDelegate = promptDelegate
         s.textInput.setDelegate(textInputDelegate)
+        s.mediaSessionDelegate = mediaSessionDelegate
     }
 
     // ───────────────────────────── Nhập chữ vào trang ─────────────────────────────
@@ -334,6 +395,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     }
 
     override fun onCurrentTabChanged(tab: BrowserTab) {
+        keepScreenOn(false)
         pageScrollY = 0
         progress.visibility = View.GONE
         urlBar.setText(displayUrl(tab.url)) // đổi tab → luôn hiện URL của tab mới
@@ -456,6 +518,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             if (!tabs.isCurrent(session)) return
             progress.visibility = View.GONE
             if (pageStartMs > 0) diagnostics.lastPageLoadMs = SystemClock.uptimeMillis() - pageStartMs
+            saveSession() // phòng khi Android đóng app đột ngột vì thiếu RAM
         }
     }
 
@@ -849,6 +912,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                     showToast(if (ok) "Đang tải bộ lọc mới trong nền…" else getString(R.string.ublock_loading))
                 }
             },
+            MenuItem("Mở lại các tab lần trước khi khởi động: ${if (settings.restoreTabs) "BẬT" else "TẮT"}") {
+                settings.restoreTabs = !settings.restoreTabs
+                showToast("Mở lại tab lần trước: ${if (settings.restoreTabs) "BẬT" else "TẮT"}")
+            },
             MenuItem("Tự kiểm tra bản mới mỗi ngày: ${if (settings.autoUpdateCheck) "BẬT" else "TẮT"}") {
                 settings.autoUpdateCheck = !settings.autoUpdateCheck
             },
@@ -1029,6 +1096,33 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     /** Con trỏ đang hiện trên màn hình (chưa tự mờ đi sau vài giây không dùng). */
     private fun isCursorShown() = isCursorMode() && cursorView.alpha > 0.05f
 
+    /** Toàn màn hình thật (Fullscreen API) hoặc trang phóng to video bằng CSS (extension tvnav). */
+    private fun isAnyFullscreen() = fullScreen || pseudoFullscreen
+
+    private fun exitAnyFullscreen() {
+        if (pseudoFullscreen) {
+            sendKeyToPage(KeyEvent.KEYCODE_ESCAPE, 0) // tvnav bỏ phóng to CSS khi nhận Escape
+            pseudoFullscreen = false
+        }
+        if (fullScreen) currentSession?.exitFullScreen()
+    }
+
+    /**
+     * OK khi đang toàn màn hình: 1 lần = phát/dừng; 2 lần nhanh = thoát toàn màn hình
+     * (lần bấm thứ hai đảo lại trạng thái phát của lần đầu cho đúng như trước).
+     */
+    private fun handleFullscreenOk() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastFullscreenOkMs < DOUBLE_PRESS_MS) {
+            lastFullscreenOkMs = 0
+            controlMedia(MediaKeys.Action.TOGGLE)
+            exitAnyFullscreen()
+        } else {
+            lastFullscreenOkMs = now
+            controlMedia(MediaKeys.Action.TOGGLE)
+        }
+    }
+
     private fun controlMedia(action: MediaKeys.Action) {
         UblockBridge.media(action) { ok ->
             if (!ok) {
@@ -1070,10 +1164,12 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             return true
         }
         // Xem video toàn màn hình, con trỏ đang ẩn: ◀ ▶ tua 10 giây, OK tạm dừng/phát (▲▼ hiện con trỏ).
-        if (fullScreen) {
+        if (isAnyFullscreen()) {
             MediaKeys.forFullscreenKey(code, cursorVisible = isCursorShown())?.let { action ->
                 val isSeek = action == MediaKeys.Action.FORWARD || action == MediaKeys.Action.REWIND
-                if (event.action == KeyEvent.ACTION_DOWN && (isSeek || event.repeatCount == 0)) controlMedia(action)
+                if (event.action == KeyEvent.ACTION_DOWN && (isSeek || event.repeatCount == 0)) {
+                    if (action == MediaKeys.Action.TOGGLE) handleFullscreenOk() else controlMedia(action)
+                }
                 return true
             }
         }
@@ -1180,7 +1276,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 val now = SystemClock.uptimeMillis()
                 val tab = currentTab
                 when {
-                    fullScreen -> currentSession?.exitFullScreen()
+                    isAnyFullscreen() -> exitAnyFullscreen()
                     tab?.canGoBack == true -> currentSession?.goBack()
                     tab != null && tabs.tabs.size > 1 -> tabs.close(tab) // tab mở từ menu: Back ở trang đầu = đóng tab
                     now - lastBackPressMs < EXIT_CONFIRM_WINDOW_MS -> finish()
@@ -1313,6 +1409,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         const val REPORT_URL = "https://phim275.vercel.app/report"
         private const val REQ_VOICE = 1001
         private const val IME_CHECK_MS = 700L
+        private const val DOUBLE_PRESS_MS = 450L
         private const val HOME_BOOKMARKS = 18
         private const val DIAG_REFRESH_MS = 2000L
         private const val MIN_TAP_MS = 40L

@@ -61,6 +61,23 @@ class TabManager(
         return tab
     }
 
+    /**
+     * Khôi phục phiên trước: các tab được tạo ở trạng thái "đã giải phóng" (chưa tải),
+     * chỉ tab hiện tại được tải ngay — không tốn RAM cho các tab còn lại.
+     */
+    fun restore(entries: List<Triple<String, String?, Boolean>>, currentIndex: Int) {
+        if (entries.isEmpty()) return
+        entries.forEach { (url, title, desktop) ->
+            _tabs += BrowserTab(nextId++).also {
+                it.url = url
+                it.title = title
+                it.desktopMode = desktop
+            }
+        }
+        select(_tabs[currentIndex.coerceIn(0, _tabs.size - 1)])
+        listener.onTabsChanged()
+    }
+
     fun select(tab: BrowserTab) {
         val previous = current
         if (previous != null && previous !== tab) {
