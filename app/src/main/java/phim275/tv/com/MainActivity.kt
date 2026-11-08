@@ -50,6 +50,7 @@ import phim275.tv.com.browser.BrowserRuntime
 import phim275.tv.com.browser.BrowserRuntime.UblockState
 import phim275.tv.com.browser.BrowserTab
 import phim275.tv.com.browser.ErrorPages
+import phim275.tv.com.browser.MediaKeys
 import phim275.tv.com.browser.SitePolicy
 import phim275.tv.com.browser.TabManager
 import phim275.tv.com.browser.TabPolicy
@@ -817,6 +818,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 settings.desktopModeDefault = !settings.desktopModeDefault
                 showToast("Tab mới sẽ mở ở chế độ ${if (settings.desktopModeDefault) "Desktop" else "Mobile"}")
             },
+            MenuItem("Cỡ chữ trang web: ${(settings.fontScale * 100).toInt()}%") {
+                val options = listOf(1.0f, 1.25f, 1.5f, 1.75f)
+                showChoice("Cỡ chữ trang web", options, settings.fontScale, { "${(it * 100).toInt()}%" }) {
+                    settings.fontScale = it
+                    BrowserRuntime.setFontScale(it)
+                    currentSession?.reload()
+                }
+            },
             MenuItem("Điều khiển: ${settings.navMode.label}") {
                 showChoice("Cách điều khiển bằng remote", NavMode.entries, settings.navMode, { it.label }) {
                     settings.navMode = it
@@ -998,6 +1007,24 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     private fun isCursorMode() = cursorView.visibility == View.VISIBLE
 
+    /** Con trỏ đang hiện trên màn hình (chưa tự mờ đi sau vài giây không dùng). */
+    private fun isCursorShown() = isCursorMode() && cursorView.alpha > 0.05f
+
+    private fun controlMedia(action: MediaKeys.Action) {
+        UblockBridge.media(action) { ok ->
+            if (!ok) {
+                // Không tìm thấy video (hoặc uBO chưa sẵn sàng): thử phím Space như bàn phím thật.
+                if (action == MediaKeys.Action.TOGGLE) sendKeyToPage(KeyEvent.KEYCODE_SPACE, 0)
+                return@media
+            }
+            when (action) {
+                MediaKeys.Action.FORWARD -> showToast("⏩ +${MediaKeys.SEEK_SECONDS} giây")
+                MediaKeys.Action.REWIND -> showToast("⏪ −${MediaKeys.SEEK_SECONDS} giây")
+                else -> Unit
+            }
+        }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         if (isToolbarMode()) {
@@ -1016,6 +1043,20 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 }
             }
             return super.dispatchKeyEvent(event)
+        }
+
+        // Phím media của remote (Play/Pause, tua) → điều khiển video trên trang.
+        MediaKeys.forMediaKey(code)?.let { action ->
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) controlMedia(action)
+            return true
+        }
+        // Xem video toàn màn hình, con trỏ đang ẩn: ◀ ▶ tua 10 giây, OK tạm dừng/phát (▲▼ hiện con trỏ).
+        if (fullScreen) {
+            MediaKeys.forFullscreenKey(code, cursorVisible = isCursorShown())?.let { action ->
+                val isSeek = action == MediaKeys.Action.FORWARD || action == MediaKeys.Action.REWIND
+                if (event.action == KeyEvent.ACTION_DOWN && (isSeek || event.repeatCount == 0)) controlMedia(action)
+                return true
+            }
         }
 
         if (isCursorMode()) {

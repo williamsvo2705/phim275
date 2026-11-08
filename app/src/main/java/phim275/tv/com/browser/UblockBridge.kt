@@ -85,6 +85,10 @@ object UblockBridge {
 
     fun updateFilters(callback: (Boolean) -> Unit) = request("updateFilters") { callback(it != null) }
 
+    /** Điều khiển video trên trang hiện tại (mọi frame, kể cả iframe trình phát). */
+    fun media(action: MediaKeys.Action, seconds: Int = MediaKeys.SEEK_SECONDS, callback: (Boolean) -> Unit = {}) =
+        request("media", mapOf("action" to action.id, "seconds" to seconds)) { callback(it?.optBoolean("ok") == true) }
+
     /** zap = true: xóa tạm phần tử (mất khi tải lại); false: tạo bộ lọc vĩnh viễn. */
     fun pickElement(zap: Boolean, callback: (Boolean) -> Unit) =
         request("pickElement", mapOf("zap" to zap)) { callback(it?.optBoolean("ok") == true) }

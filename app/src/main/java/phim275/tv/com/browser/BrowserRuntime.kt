@@ -92,6 +92,8 @@ object BrowserRuntime {
             .inputAutoZoomEnabled(false)
             .trustedRecursiveResolverMode(trrMode(AppSettings(appContext).adBlockDns))
             .trustedRecursiveResolverUri(DOH_URI)
+            .automaticFontSizeAdjustment(false)
+            .fontSizeFactor(AppSettings(appContext).fontScale)
             .build()
 
         val rt = GeckoRuntime.create(appContext, settings)
@@ -102,6 +104,11 @@ object BrowserRuntime {
     /** Bật/tắt DNS chặn quảng cáo ngay khi đang chạy (không cần khởi động lại). */
     fun setAdBlockDns(enabled: Boolean) {
         runtime?.settings?.setTrustedRecursiveResolverMode(trrMode(enabled))
+    }
+
+    /** Đổi cỡ chữ trang web ngay (1.0 = 100%). */
+    fun setFontScale(scale: Float) {
+        runtime?.settings?.setFontSizeFactor(scale)
     }
 
     private fun trrMode(enabled: Boolean) =

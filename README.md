@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.2.0** — đủ tính năng chính, đang thử nghiệm trên máy thật (máy chiếu 2GB RAM).
+> Trạng thái: **0.3.0** — đủ tính năng chính, đang thử nghiệm trên máy thật (máy chiếu 2GB RAM).
 
 ## Tính năng
 
@@ -17,6 +17,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Chặn popup (tầng app) | Chặn tab mới khác tên miền, chặn `intent://` / `market://`, tắt `alert()`, từ chối thông báo đẩy · mở lại popup vừa chặn từ Menu |
 | DNS | DNS-over-HTTPS (AdGuard DNS), bật/tắt trong Cài đặt |
 | Remote | Con trỏ ảo tăng tốc · giữ OK = menu chuột phải (mở link tab mới, bookmark link) · chế độ phím Tab · cuộn đúng khung dưới con trỏ · Back/Giữ Back/Menu · CH+/CH− · tìm kiếm giọng nói |
+| Xem video | Phím media của remote (Play/Pause, tua ±10s) điều khiển video kể cả trong iframe · toàn màn hình: ◀ ▶ tua, OK dừng/phát, ▲▼ hiện con trỏ · cỡ chữ 100–175% |
 | Nhập chữ | Ép hiện bàn phím TV (LeanKey, Gboard…) · ô nhập dự phòng tự bật khi bàn phím không hiện |
 | Tiện ích | Bookmark (hiện trên trang chủ), lịch sử, chọn công cụ tìm kiếm (Google, Cốc Cốc, Bing, DuckDuckGo, YouTube), Desktop/Mobile, xóa dữ liệu |
 | Báo lỗi | Menu → Báo trang lỗi → mã QR mở GitHub Issue điền sẵn (quét bằng điện thoại) · ghi log crash |

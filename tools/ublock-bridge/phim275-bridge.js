@@ -14,6 +14,7 @@
       - lấy số yêu cầu đã chặn
       - cập nhật bộ lọc ngay
       - mở công cụ chọn phần tử để ẩn (element picker / zapper)
+      - điều khiển video bằng phím media của remote (phát/dừng, tua)
 
 *******************************************************************************/
 
@@ -51,6 +52,18 @@ async function handle(msg) {
     case 'updateFilters':
         µb.scheduleAssetUpdater({ now: true, fetchDelay: 100 });
         return { ok: true };
+    case 'media': {
+        const tabId = await activeTabId();
+        if ( tabId === undefined ) { return { ok: false, error: 'no-active-tab' }; }
+        const code = `(${mediaControl.toString()})(${JSON.stringify(String(msg.action))}, ${Number(msg.seconds) || 10})`;
+        const results = await browser.tabs.executeScript(tabId, {
+            code,
+            allFrames: true,
+            matchAboutBlank: true,
+            runAt: 'document_idle',
+        });
+        return { ok: Array.isArray(results) && results.some(r => r === true) };
+    }
     case 'pickElement': {
         const tabId = await activeTabId();
         if ( tabId === undefined ) { return { ok: false, error: 'no-active-tab' }; }
@@ -60,6 +73,37 @@ async function handle(msg) {
     default:
         return { error: `unknown message type: ${msg.type}` };
     }
+}
+
+// Chạy trong trang (mọi frame): điều khiển video/audio lớn nhất đang có trong frame đó.
+// Trả về true nếu frame này có media để điều khiển.
+function mediaControl(action, seconds) {
+    const all = Array.from(document.querySelectorAll('video, audio'))
+        .filter(m => m.readyState > 0 || m.currentSrc);
+    if ( all.length === 0 ) { return false; }
+    const area = m => (m.clientWidth || 1) * (m.clientHeight || 1);
+    const media = all.sort((a, b) => area(b) - area(a))[0];
+    const duration = Number.isFinite(media.duration) ? media.duration : Infinity;
+    switch ( action ) {
+    case 'toggle':
+        if ( media.paused ) { media.play().catch(( ) => {}); } else { media.pause(); }
+        break;
+    case 'play':
+        media.play().catch(( ) => {});
+        break;
+    case 'pause':
+        media.pause();
+        break;
+    case 'forward':
+        media.currentTime = Math.min(duration, media.currentTime + seconds);
+        break;
+    case 'rewind':
+        media.currentTime = Math.max(0, media.currentTime - seconds);
+        break;
+    default:
+        return false;
+    }
+    return true;
 }
 
 function connect() {
