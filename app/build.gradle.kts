@@ -43,7 +43,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = baseVersionCode
-        versionName = "0.1.0-poc"
+        versionName = "0.1.0"
     }
 
     splits {
