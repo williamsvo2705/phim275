@@ -1,0 +1,27 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/tv",
+      "destination": "https://github.com/williamsvo2705/phim275/releases/latest/download/phim275-armeabi-v7a.apk",
+      "permanent": false
+    },
+    {
+      "source": "/arm64",
+      "destination": "https://github.com/williamsvo2705/phim275/releases/latest/download/phim275-arm64-v8a.apk",
+      "permanent": false
+    },
+    {
+      "source": "/latest.json",
+      "destination": "https://github.com/williamsvo2705/phim275/releases/latest/download/latest.json",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "X-Content-Type-Options", "value": "nosniff" }]
+    }
+  ]
+}

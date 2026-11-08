@@ -1,0 +1,23 @@
+! Title: Phim275 – Bộ lọc riêng
+! Description: Bộ lọc bổ sung cho trình duyệt Phim275 trên Android TV: popup, vượt anti-adblock, trang Việt Nam.
+! Homepage: https://github.com/williamsvo2705/phim275
+! Expires: 1 day
+! License: GPL-3.0
+! Last modified: 2026-11-08
+!
+! Cú pháp: https://github.com/gorhill/uBlock/wiki/Static-filter-syntax
+! Báo trang lỗi: https://github.com/williamsvo2705/phim275/issues
+
+! ───────────── Phiền toái chung trên TV ─────────────
+! Hộp "Đăng nhập bằng Google" (One Tap) — không dùng được bằng remote, che nội dung.
+||accounts.google.com/gsi/client$script,3p
+||accounts.google.com/gsi/iframe/$subdocument,3p
+##div#credential_picker_container
+##iframe[src*="accounts.google.com/gsi/"]
+
+! ───────────── Trang Việt Nam ─────────────
+! (thêm luật theo từng trang khi người dùng báo lỗi)
+
+! ───────────── Vượt anti-adblock ─────────────
+! (scriptlet theo từng trang, ví dụ:)
+! example.com##+js(set-constant, adBlockDetected, false)

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner 320x180 hiển thị trên launcher Android TV (bản tạm cho PoC). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#FF0E1116" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#FFE50914" android:pathData="M0,150h320v30h-320z" />
+    <!-- Nút play -->
+    <path android:fillColor="#FFE50914" android:pathData="M60,45 L60,125 L125,85 Z" />
+    <!-- Khiên chặn quảng cáo -->
+    <path
+        android:fillColor="#FFF2F4F8"
+        android:pathData="M220,35 L265,50 L265,85 C265,110 245,128 220,138 C195,128 175,110 175,85 L175,50 Z" />
+    <path
+        android:strokeColor="#FFE50914"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:pathData="M198,60 L242,112" />
+</vector>

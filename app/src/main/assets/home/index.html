@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phim275</title>
+<style>
+  :root { --bg:#0e1116; --card:#1a2029; --card-hi:#252d39; --accent:#e50914; --text:#f2f4f8; --dim:#9aa4b2; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1400px; margin: 0 auto; padding: 48px 56px 64px; }
+  header { display:flex; align-items:center; gap:18px; margin-bottom: 28px; }
+  .logo { width:64px; height:64px; border-radius:50%; background: linear-gradient(135deg, #ff7a18, #e50914);
+    display:grid; place-items:center; font-weight:900; font-size:22px; letter-spacing:-.5px; }
+  h1 { margin:0; font-size:40px; letter-spacing:.5px; }
+  .sub { color:var(--dim); font-size:18px; margin-top:4px; }
+  form { display:flex; gap:12px; margin: 8px 0 36px; }
+  input[type=search] { flex:1; font-size:24px; padding:18px 22px; border-radius:14px;
+    border:3px solid #2a313c; background:var(--card); color:var(--text); outline:none; }
+  input[type=search]:focus { border-color: var(--accent); }
+  button { font-size:22px; padding:0 30px; border-radius:14px; border:0; background:var(--accent);
+    color:#fff; font-weight:700; }
+  h2 { font-size:22px; color:var(--dim); font-weight:600; margin: 30px 0 14px; text-transform: uppercase; letter-spacing: 1px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap:16px; }
+  a.tile { display:flex; flex-direction:column; justify-content:flex-end; min-height:110px; padding:18px 20px;
+    border-radius:16px; background:var(--card); color:var(--text); text-decoration:none;
+    border:3px solid transparent; transition: transform .12s, background .12s, border-color .12s; }
+  a.tile:hover, a.tile:focus { background:var(--card-hi); border-color:var(--accent); transform: scale(1.04); outline:none; }
+  .tile b { font-size:22px; }
+  .tile span { color:var(--dim); font-size:15px; margin-top:4px; }
+  .help { margin-top:44px; padding:20px 24px; border-radius:16px; background:#141922; color:var(--dim);
+    font-size:18px; line-height:1.7; }
+  kbd { background:#2a313c; color:var(--text); border-radius:6px; padding:2px 9px; font-family:inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">275</div>
+    <div>
+      <h1>Phim275</h1>
+      <div class="sub">Trình duyệt chặn quảng cáo cho Android TV · bản thử nghiệm</div>
+    </div>
+  </header>
+
+  <form action="https://www.google.com/search" method="get">
+    <input type="search" name="q" placeholder="Tìm kiếm Google hoặc nhập địa chỉ…" autocomplete="off">
+    <button type="submit">Tìm</button>
+  </form>
+
+  <h2>Kiểm tra chặn quảng cáo</h2>
+  <div class="grid">
+    <a class="tile" href="https://canyoublockit.com/extreme-test/"><b>Can You Block It</b><span>Extreme test · popup, video</span></a>
+    <a class="tile" href="https://adblock-tester.com/"><b>AdBlock Tester</b><span>Chấm điểm /100 · banner, analytics</span></a>
+    <a class="tile" href="https://blockads.fivefilters.org/"><b>FiveFilters</b><span>Tên miền quảng cáo</span></a>
+  </div>
+
+  <h2>Video</h2>
+  <div class="grid">
+    <a class="tile" href="https://www.youtube.com/"><b>YouTube</b><span>youtube.com</span></a>
+    <a class="tile" href="https://www.dailymotion.com/"><b>Dailymotion</b><span>dailymotion.com</span></a>
+    <a class="tile" href="https://vimeo.com/watch"><b>Vimeo</b><span>vimeo.com</span></a>
+  </div>
+
+  <h2>Tin tức Việt Nam (nhiều quảng cáo)</h2>
+  <div class="grid">
+    <a class="tile" href="https://vnexpress.net/"><b>VnExpress</b><span>vnexpress.net</span></a>
+    <a class="tile" href="https://www.24h.com.vn/"><b>24h</b><span>24h.com.vn</span></a>
+    <a class="tile" href="https://kenh14.vn/"><b>Kênh 14</b><span>kenh14.vn</span></a>
+    <a class="tile" href="https://dantri.com.vn/"><b>Dân trí</b><span>dantri.com.vn</span></a>
+    <a class="tile" href="https://bongda.com.vn/"><b>Bóng Đá</b><span>bongda.com.vn</span></a>
+  </div>
+
+  <div class="help">
+    <b style="color:var(--text)">Cách dùng remote</b><br>
+    <kbd>◀ ▲ ▶ ▼</kbd> di chuyển con trỏ (giữ để chạy nhanh, chạm mép để cuộn trang) ·
+    <kbd>OK</kbd> bấm ·
+    <kbd>Back</kbd> quay lại ·
+    <kbd>Giữ Back</kbd> / <kbd>Menu</kbd> / đẩy con trỏ lên mép trên → mở thanh địa chỉ ·
+    <kbd>CH+ / CH−</kbd> cuộn nhanh
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+[versions]
+agp = "9.5.1"
+# AGP 9 dùng Kotlin tích hợp; khai báo KGP để nâng trình biên dịch (GeckoView cần stdlib 2.4).
+kotlin = "2.4.21"
+geckoview = "159.0.20261102144711"
+junit = "4.13.2"
+
+[libraries]
+geckoview = { module = "org.mozilla.geckoview:geckoview", version.ref = "geckoview" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
