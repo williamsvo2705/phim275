@@ -17,6 +17,57 @@
 
     const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F9' ]);
     const FORWARD_TAG = 'phim275-tvnav-key';
+    // Hộp thoại bên trong iframe trình phát ("Tiếp tục xem / Xem lại từ đầu"…): iframe báo trạng thái,
+    // trang chính chuyển phím vào để chọn nút.
+    const DIALOG_KEY_TAG = 'phim275-tvnav-dialog-key';
+    const DIALOG_STATE_TAG = 'phim275-tvnav-dialog-state';
+    const DIALOG_BUTTONS = 'button, [role=button], a[href], input[type=button], input[type=submit]';
+    // Dữ liệu postMessage thuộc compartment của trang → `instanceof Object` trong content script luôn sai.
+    const isObj = d => typeof d === 'object' && d !== null;
+
+    // ── Xem tiếp đúng chỗ (mọi frame, kể cả iframe trình phát khác tên miền) ──
+    // Video chính (≥ 2 phút: bỏ quảng cáo chèn đầu, đoạn xem trước) báo vị trí cho app mỗi 5 giây,
+    // khi tạm dừng và khi rời trang. Lúc bắt đầu phát, hỏi app vị trí lần trước để tua tới.
+    (function trackPlayback() {
+        if ( typeof browser === 'undefined' || !browser.runtime ) { return; }
+        const MIN_DURATION = 120;
+        const REPORT_MS = 5000;
+        const asked = new WeakSet();
+        let lastReport = 0;
+        const videoOf = ev => {
+            const t = typeof ev.composedPath === 'function' ? ev.composedPath()[0] : ev.target;
+            return t instanceof HTMLVideoElement ? t : null;
+        };
+        const isMain = v => Number.isFinite(v.duration) && v.duration >= MIN_DURATION;
+        // Khung chính tự gửi URL của mình (lúc rời trang, trình duyệt có thể không còn cho biết tab).
+        const top = window === window.top ? location.href : null;
+        const send = (msg) => { browser.runtime.sendMessage(Object.assign({ top }, msg)).catch(( ) => {}); };
+        function report(v, flush) {
+            if ( isMain(v) && v.currentTime > 0 ) { send({ type: 'mediaPos', t: v.currentTime, d: v.duration, flush }); }
+        }
+        function maybeResume(v) {
+            if ( asked.has(v) || !isMain(v) ) { return; }
+            asked.add(v);
+            // c: vị trí lúc bắt đầu — trang tự xem tiếp (bắt đầu giữa phim) thì app nhường trang.
+            browser.runtime.sendMessage({ type: 'mediaResume', d: v.duration, c: v.currentTime, top }).then(t => {
+                if ( typeof t === 'number' && t > 0 && v.currentTime < t - 5 ) { v.currentTime = t; }
+            }, ( ) => {});
+        }
+        addEventListener('playing', ev => { const v = videoOf(ev); if ( v !== null ) { maybeResume(v); } }, true);
+        addEventListener('timeupdate', ev => {
+            const v = videoOf(ev);
+            if ( v === null || v.paused ) { return; }
+            maybeResume(v); // luồng HLS: độ dài chỉ biết sau khi đã phát
+            const now = Date.now();
+            if ( now - lastReport < REPORT_MS ) { return; }
+            lastReport = now;
+            report(v, false);
+        }, true);
+        addEventListener('pause', ev => { const v = videoOf(ev); if ( v !== null ) { report(v, true); } }, true);
+        addEventListener('pagehide', ( ) => {
+            for ( const v of document.querySelectorAll('video') ) { report(v, true); }
+        });
+    })();
 
     // ── Trong iframe (vd. trình phát video): không điều hướng, chỉ chuyển phím lên trang chính ──
     // Sau khi bấm vào trình phát, focus bàn phím nằm trong iframe nên phím không tới trang chính.
@@ -31,7 +82,97 @@
             ev.stopImmediatePropagation();
             try { window.top.postMessage({ [FORWARD_TAG]: ev.key }, '*'); } catch { }
         }, true);
+        frameDialog();
         return;
+    }
+
+    /** Trong iframe: tìm hộp thoại (≥ 2 nút có chữ ở giữa khung), vẽ viền nút đang chọn, nhận phím từ trang chính. */
+    function frameDialog() {
+        let dlg = null;     // { buttons, index }
+        let shown = false;  // trang chính đang chọn trình phát này → mới vẽ viền (tránh viền lạc ở iframe khác)
+        let ring = null;
+        let pending = null;
+        function dialogButtons() {
+            const vw = innerWidth, vh = innerHeight;
+            const out = [];
+            for ( const el of document.querySelectorAll(DIALOG_BUTTONS) ) {
+                const r = el.getBoundingClientRect();
+                if ( r.width < 6 || r.height < 6 ) { continue; }
+                const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                if ( cx < vw * 0.15 || cx > vw * 0.85 || cy < vh * 0.15 || cy > vh * 0.8 ) { continue; }
+                if ( (el.innerText || el.value || '').trim().length < 2 ) { continue; }
+                const cs = getComputedStyle(el);
+                if ( cs.visibility === 'hidden' || cs.opacity === '0' ) { continue; }
+                const hit = document.elementFromPoint(cx, cy);
+                if ( hit === null || (hit !== el && !el.contains(hit) && !hit.contains(el)) ) { continue; }
+                out.push(el);
+            }
+            const pos = el => el.getBoundingClientRect();
+            out.sort((a, b) => {
+                const ra = pos(a), rb = pos(b);
+                return Math.abs(ra.top - rb.top) > 8 ? ra.top - rb.top : ra.left - rb.left;
+            });
+            return out.length >= 2 ? out : [];
+        }
+        function drawRing() {
+            if ( dlg === null || !shown ) {
+                if ( ring !== null ) { ring.style.display = 'none'; }
+                return;
+            }
+            if ( ring === null || !ring.isConnected ) {
+                ring = document.createElement('div');
+                ring.setAttribute('aria-hidden', 'true');
+                ring.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;' +
+                    'border:4px solid #e50914;border-radius:10px;' +
+                    'box-shadow:0 0 0 3px rgba(255,255,255,.85),0 0 22px 4px rgba(229,9,20,.75)';
+                (document.body || document.documentElement).appendChild(ring);
+            }
+            const r = dlg.buttons[dlg.index].getBoundingClientRect();
+            Object.assign(ring.style, {
+                display: 'block', left: `${r.left - 4}px`, top: `${r.top - 4}px`,
+                width: `${r.width + 8}px`, height: `${r.height + 8}px`,
+            });
+        }
+        function refresh() {
+            pending = null;
+            const buttons = dialogButtons();
+            const had = dlg !== null;
+            if ( buttons.length === 0 ) {
+                dlg = null;
+            } else {
+                const prev = dlg !== null ? dlg.buttons[dlg.index] : null;
+                let index = prev !== null ? buttons.indexOf(prev) : -1;
+                if ( index < 0 ) {
+                    const ae = document.activeElement;
+                    index = Math.max(0, buttons.findIndex(b => ae !== null && (b === ae || b.contains(ae))));
+                }
+                dlg = { buttons, index };
+            }
+            drawRing();
+            if ( had !== (dlg !== null) ) {
+                try { window.parent.postMessage({ [DIALOG_STATE_TAG]: dlg !== null }, '*'); } catch { }
+            }
+        }
+        const schedule = ( ) => { if ( pending === null ) { pending = setTimeout(refresh, 300); } };
+        new MutationObserver(schedule).observe(document.documentElement, {
+            childList: true, subtree: true, attributes: true, attributeFilter: [ 'class', 'style', 'hidden' ],
+        });
+        schedule();
+        addEventListener('message', ev => {
+            const data = ev.data;
+            if ( !isObj(data) || typeof data[DIALOG_KEY_TAG] !== 'string' ) { return; }
+            const key = data[DIALOG_KEY_TAG];
+            if ( key === 'hide' ) { shown = false; drawRing(); return; }
+            shown = true;
+            if ( dlg === null ) { return; }
+            const n = dlg.buttons.length;
+            switch ( key ) {
+            case 'show': drawRing(); break;
+            case 'ArrowLeft': case 'ArrowUp': dlg.index = (dlg.index - 1 + n) % n; drawRing(); break;
+            case 'ArrowRight': case 'ArrowDown': dlg.index = (dlg.index + 1) % n; drawRing(); break;
+            case 'Enter': dlg.buttons[dlg.index].click(); schedule(); break;
+            }
+        });
     }
 
     const SELECTOR = [
@@ -52,6 +193,7 @@
 
     let cache = null;
     let current = null;
+    let lastRect = null;            // vị trí khối đang chọn gần nhất (để chọn lại khối gần đó khi nó bị gỡ)
     let overlay = null;
     let hint = null;
     let pendingActivate = null;     // chờ xem có bấm OK lần 2 (khối video) không
@@ -67,8 +209,11 @@
     }
 
     // Trang SPA (Next.js, React…) đổi nội dung mà không tải lại: khối đang chọn có thể bị gỡ khỏi DOM.
+    const dialogFrames = new WeakSet();    // cửa sổ iframe đang hiện hộp thoại
     let lastHref = location.href;
     let settleTimer = null;
+    let lastDialogCheck = 0;
+    const DIALOG_CHECK_MS = 1000;       // trình phát đổi DOM liên tục khi đang phát → kiểm tra thưa (box 1GB)
     new MutationObserver(( ) => {
         cache = null;
         if ( settleTimer === null ) { settleTimer = setTimeout(onDomSettled, SETTLE_MS); }
@@ -81,6 +226,13 @@
         if ( current !== null && !isAlive(current) ) {
             current = null;
             drawOverlay();
+        }
+        // Hộp thoại hiện lên giữa trình phát đang chọn (vd. "Tiếp tục xem / Xem lại từ đầu") → chọn nút của nó.
+        const now = Date.now();
+        if ( current !== null && isMediaBlock(current) && !isFullscreen() && now - lastDialogCheck >= DIALOG_CHECK_MS ) {
+            lastDialogCheck = now;
+            const btn = dialogOver(current);
+            if ( btn !== null ) { select(btn); }
         }
         if ( location.href !== lastHref ) {
             lastHref = location.href;
@@ -98,7 +250,30 @@
     function autoSelectPlayer() {
         if ( isFullscreen() || (current !== null && isAlive(current)) ) { return; }
         const player = findPlayer();
-        if ( player !== null ) { select(player); }
+        if ( player !== null ) { select(dialogOver(player) || player); }
+    }
+
+    /**
+     * Nút của hộp thoại đè lên giữa trình phát (≥ 2 nút có chữ ở vùng giữa khung; thanh điều khiển ở mép
+     * dưới không tính) → nút trang đã đặt focus sẵn, hoặc nút đầu tiên. Không có → null.
+     */
+    function dialogOver(player) {
+        const pr = player.getBoundingClientRect();
+        const x1 = pr.left + pr.width * 0.15, x2 = pr.right - pr.width * 0.15;
+        const y1 = pr.top + pr.height * 0.15, y2 = pr.bottom - pr.height * 0.2;
+        const buttons = [];
+        // Chỉ xét nút thật (rẻ, không quét cursor:pointer toàn trang).
+        for ( const el of document.querySelectorAll(DIALOG_BUTTONS) ) {
+            if ( el === player || el.contains(player) || player.contains(el) ) { continue; }
+            const r = el.getBoundingClientRect();
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            if ( cx < x1 || cx > x2 || cy < y1 || cy > y2 ) { continue; }
+            if ( (el.innerText || '').trim().length < 2 || !isUsable(el, r) ) { continue; }
+            buttons.push(el);
+        }
+        if ( buttons.length < 2 ) { return null; }
+        const ae = document.activeElement;
+        return buttons.find(b => ae !== null && (b === ae || b.contains(ae))) || firstVisible(buttons);
     }
 
     const area = r => r.width * r.height;
@@ -225,6 +400,25 @@
         return primary + weight * secondary + 0.05 * offset;
     }
 
+    /** Khối bấm được trong màn hình gần [rect] nhất (tâm tới tâm). */
+    function nearestTo(list, rect) {
+        const tx = rect.left + rect.width / 2, ty = rect.top + rect.height / 2;
+        let best = null, bestDist = Infinity;
+        for ( const el of list ) {
+            const r = el.getBoundingClientRect();
+            if ( r.bottom < 0 || r.top > innerHeight || !isUsable(el, r) ) { continue; }
+            const dx = r.left + r.width / 2 - tx, dy = r.top + r.height / 2 - ty;
+            const dist = dx * dx + dy * dy;
+            if ( dist < bestDist ) { bestDist = dist; best = el; }
+        }
+        return best;
+    }
+
+    /** Chọn lại khi chưa có / mất khối: trình phát → khối gần chỗ cũ → khối đầu tiên. */
+    function startBlock(list) {
+        return findPlayer() || (lastRect !== null ? nearestTo(list, lastRect) : null) || firstVisible(list);
+    }
+
     function firstVisible(list) {
         let best = null, bestKey = Infinity;
         for ( const el of list ) {
@@ -246,7 +440,7 @@
         const list = collect();
         if ( current !== null && !isAlive(current) ) { current = null; }
         if ( current === null ) {
-            const first = findPlayer() || firstVisible(list);
+            const first = startBlock(list);
             if ( first !== null ) { select(first); } else { scrollPage(dir); }
             return;
         }
@@ -270,12 +464,24 @@
     }
 
     function select(el) {
+        if ( current !== el ) {
+            tellFrame(current, 'hide');
+            tellFrame(el, 'show');
+        }
         current = el;
         const r = el.getBoundingClientRect();
+        lastRect = r;
         if ( r.top < 70 || r.bottom > innerHeight - 70 || r.left < 0 || r.right > innerWidth ) {
             el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
         }
         showOverlay();
+    }
+
+    /** Báo iframe trình phát (có hộp thoại) rằng nó đang / thôi được chọn. */
+    function tellFrame(el, what) {
+        if ( el === null || el.tagName !== 'IFRAME' || el.contentWindow === null ) { return; }
+        if ( !dialogFrames.has(el.contentWindow) ) { return; }
+        try { el.contentWindow.postMessage({ [DIALOG_KEY_TAG]: what }, '*'); } catch { }
     }
 
     function ensureOverlay() {
@@ -308,6 +514,7 @@
             return;
         }
         const r = current.getBoundingClientRect();
+        if ( r.width > 0 ) { lastRect = r; }
         const o = ensureOverlay();
         const pad = 4;
         o.style.left = `${r.left - pad}px`;
@@ -442,6 +649,13 @@
         }
         // Đang toàn màn hình: không di chuyển viền (app xử lý tua / dừng / thoát).
         if ( isFullscreen() ) { return false; }
+        // Trình phát (iframe) đang chọn có hộp thoại bên trong → phím chọn nút của hộp thoại.
+        if ( (DIRS[key] !== undefined || key === 'Enter') && current !== null && current.tagName === 'IFRAME' &&
+             current.isConnected && current.contentWindow !== null && dialogFrames.has(current.contentWindow) ) {
+            if ( pendingActivate !== null ) { clearTimeout(pendingActivate); pendingActivate = null; }
+            current.contentWindow.postMessage({ [DIALOG_KEY_TAG]: key }, '*');
+            return true;
+        }
         const ae = document.activeElement;
         const editing = isEditing(ae);
         const dir = DIRS[key];
@@ -456,12 +670,15 @@
         if ( current !== null && !isAlive(current) ) { current = null; }
         if ( current === null ) {
             // Chưa chọn khối (hoặc khối cũ đã bị gỡ khi trang đổi nội dung): chọn khối trước, không bấm mù.
-            const start = findPlayer() || firstVisible(collect());
+            const start = startBlock(collect());
             if ( start === null ) { return false; }
             select(start);
             return true;
         }
         if ( !isMediaBlock(current) ) { activate(); return true; }
+        // Hộp thoại đang đè lên trình phát: chọn nút của hộp thoại trước (bấm OK lần nữa để chọn).
+        const dialogBtn = isFullscreen() ? null : dialogOver(current);
+        if ( dialogBtn !== null ) { select(dialogBtn); return true; }
         // Khối video: OK 1 lần = phát/dừng (chờ chút xem có lần 2), OK 2 lần = toàn màn hình.
         if ( pendingActivate !== null ) {
             clearTimeout(pendingActivate);
@@ -491,8 +708,15 @@
     // Phím được chuyển lên từ iframe (focus đang nằm trong trình phát).
     addEventListener('message', ev => {
         const data = ev.data;
-        if ( data instanceof Object && typeof data[FORWARD_TAG] === 'string' ) {
+        if ( isObj(data) && typeof data[FORWARD_TAG] === 'string' ) {
             handleKey(data[FORWARD_TAG]);
+        }
+        // iframe báo đang / thôi hiện hộp thoại.
+        if ( isObj(data) && typeof data[DIALOG_STATE_TAG] === 'boolean' && ev.source !== null ) {
+            if ( data[DIALOG_STATE_TAG] ) { dialogFrames.add(ev.source); } else { dialogFrames.delete(ev.source); }
+            if ( current !== null && current.tagName === 'IFRAME' && current.contentWindow === ev.source ) {
+                tellFrame(current, 'show');
+            }
         }
     });
 })();

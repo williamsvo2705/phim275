@@ -2,11 +2,11 @@
   "manifest_version": 2,
   "name": "Phim275 TV Navigation",
   "description": "Điều hướng mọi trang web bằng phím mũi tên của remote (chuyển khối kiểu Android TV).",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "browser_specific_settings": {
     "gecko": { "id": "tvnav@phim275.tv" }
   },
-  "permissions": ["nativeMessaging", "geckoViewAddons"],
+  "permissions": ["nativeMessaging", "geckoViewAddons", "tabs"],
   "background": { "scripts": ["background.js"] },
   "content_scripts": [
     {

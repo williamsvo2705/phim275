@@ -73,6 +73,8 @@ import phim275.tv.com.data.AppSettings
 import phim275.tv.com.data.AppSettings.NavMode
 import phim275.tv.com.data.DeviceProfile
 import phim275.tv.com.data.LinkStore
+import phim275.tv.com.data.PlaybackCodec
+import phim275.tv.com.data.PlaybackStore
 import phim275.tv.com.data.SavedSession
 import phim275.tv.com.data.SavedTab
 import phim275.tv.com.data.SearchEngine
@@ -110,6 +112,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private lateinit var settings: AppSettings
     private lateinit var bookmarks: LinkStore
     private lateinit var history: LinkStore
+    private lateinit var playback: PlaybackStore
     private lateinit var sessionStore: SessionStore
     private lateinit var diagnostics: Diagnostics
     private lateinit var updater: UpdateManager
@@ -191,6 +194,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         settings = AppSettings(this)
         bookmarks = LinkStore.bookmarks(this)
         history = LinkStore.history(this)
+        playback = PlaybackStore(this)
         sessionStore = SessionStore(this)
         updater = UpdateManager(this)
         setContentView(R.layout.activity_main)
@@ -224,6 +228,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             pseudoFullscreen = on
             if (on) enterPageMode()
         }
+        TvNavBridge.playbackListener = ::onPlaybackPosition
+        TvNavBridge.resumeProvider = ::resumePositionFor
 
         // Mở lại các tab lần trước (sau khi cập nhật / Android đóng app vì thiếu RAM).
         val saved = if (settings.restoreTabs) sessionStore.load() else null
@@ -304,6 +310,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.tapListener = null
         TvNavBridge.pseudoFullscreenListener = null
         TvNavBridge.contextListener = null
+        TvNavBridge.playbackListener = null
+        TvNavBridge.resumeProvider = null
         handler.removeCallbacksAndMessages(null)
         cursor.release()
         if (isFinishing) tabs.closeAll()
@@ -999,6 +1007,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 PanelSection(null, listOf(PanelItem("Xóa toàn bộ lịch sử", R.drawable.ic_clean) {
                     panel.confirm("Xóa lịch sử?", "Toàn bộ ${all.size} trang đã xem sẽ bị xóa.", "Xóa", R.drawable.ic_clean) {
                         history.clear()
+                        playback.clear()
                         showToast("Đã xóa lịch sử")
                     }
                 })),
@@ -1151,6 +1160,32 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             { showToast("Xóa dữ liệu thất bại: ${it?.message}") },
         )
         history.clear()
+        playback.clear()
+    }
+
+    // ───────────────────────────── Xem tiếp đúng chỗ ─────────────────────────────
+
+    /** Trang (hoặc iframe trình phát của nó) báo vị trí video chính đang xem. */
+    private fun onPlaybackPosition(page: String?, positionSec: Double, durationSec: Double, flush: Boolean) {
+        // Không rõ trang nào lúc đang rời trang → bỏ qua (tab có thể đã sang trang mới; vị trí đã ghi ≤ 5 giây trước).
+        if (page == null && flush) return
+        val url = page ?: currentUrl
+        if (!LinkStore.isRecordable(url)) return
+        playback.record(url!!, positionSec, durationSec, flush)
+    }
+
+    /** Video vừa bắt đầu phát: tua tới chỗ lần trước nếu cùng video và chưa xem hết. */
+    private fun resumePositionFor(page: String?, durationSec: Double, startSec: Double): Double? {
+        val url = page ?: currentUrl
+        if (!LinkStore.isRecordable(url)) return null
+        val host = Uri.parse(url).host.orEmpty()
+        if (PlaybackCodec.siteResumedItself(startSec)) {
+            playback.markSiteResumes(host) // trang tự xem tiếp được → từ nay nhường trang
+            return null
+        }
+        val position = PlaybackCodec.resumePosition(playback.get(url!!), durationSec, startSec, playback.siteResumes(host)) ?: return null
+        showToast("▶ Xem tiếp từ ${PlaybackCodec.formatTime(position)} · ⏪ tua lại")
+        return position
     }
 
     // ───────────────────────────── Tải file ─────────────────────────────
@@ -1595,7 +1630,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             .filter { it.title.isNotBlank() && it.title != it.url } // trang chưa có tiêu đề
             .distinctBy { it.title } // trang phim + trang tập thường trùng tiêu đề
             .take(HOME_RECENT)
-            .forEach { recent.put(JSONObject().put("u", it.url).put("t", it.title)) }
+            .forEach { link ->
+                val item = JSONObject().put("u", link.url).put("t", link.title)
+                // Đang xem dở video trên trang này → thanh tiến độ + "Còn 23:10".
+                playback.get(link.url)?.let { p ->
+                    item.put("p", p.fraction).put("w", "Còn " + PlaybackCodec.formatTime(p.durationSec - p.positionSec))
+                }
+                recent.put(item)
+            }
         val data = JSONObject()
             .put("s", settings.searchEngine.template)
             .put("n", settings.searchEngine.label)

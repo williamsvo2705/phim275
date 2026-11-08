@@ -29,6 +29,12 @@ object TvNavBridge {
     /** Giữ OK ở chế độ chuyển khối: (liên kết của khối hoặc null, chữ trên khối). */
     var contextListener: ((String?, String) -> Unit)? = null
 
+    /** Vị trí video chính đang xem: (URL trang của tab hoặc null, giây hiện tại, độ dài, ghi ngay). */
+    var playbackListener: ((String?, Double, Double, Boolean) -> Unit)? = null
+
+    /** Video vừa bắt đầu phát: (URL trang hoặc null, độ dài, giây lúc bắt đầu) → giây cần tua tới, hoặc null = để yên. */
+    var resumeProvider: ((String?, Double, Double) -> Double?)? = null
+
     fun install(runtime: GeckoRuntime) {
         runtime.webExtensionController.ensureBuiltIn(EXTENSION_URI, EXTENSION_ID).accept(
             { ext ->
@@ -42,6 +48,25 @@ object TvNavBridge {
     private val delegate = object : WebExtension.MessageDelegate {
         override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
             val json = message as? JSONObject ?: return GeckoResult.fromValue(false)
+            val page = if (json.isNull("page")) null else json.optString("page").takeIf { it.isNotBlank() }
+            if (json.optString("type") == "mediaPos") {
+                val t = json.optDouble("t", Double.NaN)
+                val d = json.optDouble("d", Double.NaN)
+                val flush = json.optBoolean("flush")
+                if (t.isNaN() || d.isNaN()) return GeckoResult.fromValue(false)
+                if (flush) Log.i(TAG, "Vị trí video %.0f/%.0f giây (%s)".format(t, d, page ?: "tab hiện tại"))
+                main.post { playbackListener?.invoke(page, t, d, flush) }
+                return GeckoResult.fromValue(true)
+            }
+            if (json.optString("type") == "mediaResume") {
+                val d = json.optDouble("d", Double.NaN)
+                val start = json.optDouble("c", 0.0)
+                if (d.isNaN()) return GeckoResult.fromValue(0)
+                Log.i(TAG, "Video bắt đầu phát ở %.0f/%.0f giây (%s)".format(start, d, page ?: "tab hiện tại"))
+                val result = GeckoResult<Any>()
+                main.post { result.complete(resumeProvider?.invoke(page, d, start) ?: 0) }
+                return result
+            }
             if (json.optString("type") == "context") {
                 val href = if (json.isNull("href")) null else json.optString("href").takeIf { it.isNotBlank() }
                 val text = json.optString("text")
