@@ -400,9 +400,11 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
         override fun onLoadRequest(session: GeckoSession, request: NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
             val uri = request.uri
-            // Lệnh nội bộ từ trang chủ, ví dụ phim275://search → mở hộp tìm kiếm của app.
+            // Lệnh nội bộ từ trang chủ: phim275://search, phim275://update.
             if (uri.startsWith("phim275:")) {
-                handler.post { showTextEntryDialog(forPage = false) }
+                handler.post {
+                    if (uri.contains("update")) checkForUpdates(silent = false) else showTextEntryDialog(forPage = false)
+                }
                 return GeckoResult.deny()
             }
             if (SitePolicy.isExternalAppScheme(uri)) {
@@ -902,6 +904,12 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
         fun header(name: String) = response.headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
         val fileName = URLUtil.guessFileName(uri, header("Content-Disposition"), header("Content-Type"))
+        // Bấm tải APK Phim275 (từ phim275.vercel.app / GitHub) → dùng bộ tự cập nhật để cài thẳng,
+        // vì TV thường không có trình quản lý file để mở APK trong thư mục Download.
+        if (fileName.startsWith("phim275-") && fileName.endsWith(".apk")) {
+            checkForUpdates(silent = false)
+            return
+        }
         try {
             val request = DownloadManager.Request(Uri.parse(uri))
                 .setTitle(fileName)
