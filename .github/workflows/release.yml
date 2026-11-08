@@ -27,10 +27,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
+      # Runner ubuntu-latest có sẵn Android SDK tại $ANDROID_HOME.
+      # (Không dùng android-actions/setup-android@v3: action đó cài gói "tools" đã bị gỡ → lỗi.)
       - name: Cài Android SDK platform 37.2
-        run: sdkmanager "platforms;android-37.2" "build-tools;37.0.0"
+        run: |
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          echo "Dùng $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.2" "build-tools;37.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
 
