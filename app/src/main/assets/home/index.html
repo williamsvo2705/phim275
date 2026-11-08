@@ -28,7 +28,8 @@
   .tile b { font-size:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .tile span { color:var(--dim); font-size:15px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .tile.star { border-color:#3a2a10; }
-  #bookmarks-section[hidden] { display:none; }
+  #bookmarks-section[hidden], #recent-section[hidden] { display:none; }
+  .tile.recent { border-color:#2a3442; }
   .help { margin-top:44px; padding:20px 24px; border-radius:16px; background:#141922; color:var(--dim);
     font-size:18px; line-height:1.7; }
   kbd { background:#2a313c; color:var(--text); border-radius:6px; padding:2px 9px; font-family:inherit; }
@@ -46,6 +47,11 @@
 
   <!-- Bấm vào đây: app mở hộp nhập chữ riêng (luôn hiện được bàn phím TV). -->
   <a class="search" href="phim275://search">🔍 <span id="search-label">Tìm kiếm Google hoặc nhập địa chỉ…</span><span class="go">Tìm</span></a>
+
+  <section id="recent-section" hidden>
+    <h2>▶ Xem gần đây</h2>
+    <div class="grid" id="recent"></div>
+  </section>
 
   <section id="bookmarks-section" hidden>
     <h2>★ Bookmark của bạn</h2>
@@ -96,19 +102,23 @@
     var data = {};
     try { data = JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}"); } catch (e) {}
     if (data.n) document.getElementById("search-label").textContent = "Tìm kiếm " + data.n + " hoặc nhập địa chỉ…";
-    var list = Array.isArray(data.b) ? data.b : [];
-    var grid = document.getElementById("bookmarks");
+    fill("bookmarks", "tile star", data.b);
+    fill("recent", "tile recent", data.r);
+  }
+  function fill(id, cls, links) {
+    var list = Array.isArray(links) ? links : [];
+    var grid = document.getElementById(id);
     grid.textContent = "";
     list.forEach(function (b) {
       var a = document.createElement("a");
-      a.className = "tile star";
+      a.className = cls;
       a.href = b.u;
       var t = document.createElement("b"); t.textContent = b.t || host(b.u);
       var s = document.createElement("span"); s.textContent = host(b.u);
       a.appendChild(t); a.appendChild(s);
       grid.appendChild(a);
     });
-    document.getElementById("bookmarks-section").hidden = list.length === 0;
+    document.getElementById(id + "-section").hidden = list.length === 0;
   }
   window.addEventListener("hashchange", render);
   render();

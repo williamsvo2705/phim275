@@ -15,7 +15,7 @@
     if ( window.__phim275TvNav ) { return; }
     window.__phim275TvNav = true;
 
-    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape' ]);
+    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F9' ]);
     const FORWARD_TAG = 'phim275-tvnav-key';
 
     // ── Trong iframe (vd. trình phát video): không điều hướng, chỉ chuyển phím lên trang chính ──
@@ -350,8 +350,25 @@
         return el.tagName === 'INPUT' && !NON_TEXT_INPUT.test(el.type);
     }
 
+    /** Giữ OK (app gửi phím F9): báo cho app liên kết của khối đang chọn để mở menu. */
+    function requestBlockMenu() {
+        if ( current === null || !current.isConnected ) { return false; }
+        const link = current.closest('a[href]') || current.querySelector('a[href]');
+        const img = current.querySelector('img[alt]');
+        // Ưu tiên tên thật (title, aria-label, alt ảnh), rồi tới dòng chữ dài nhất (thường là tên phim, không phải nhãn "Song ngữ").
+        const longestLine = (current.innerText || '').split('\n').map(s => s.trim())
+            .reduce((a, b) => (b.length > a.length ? b : a), '');
+        const text = (
+            (link && link.title) || current.getAttribute('aria-label') || current.title ||
+            (img && img.alt) || longestLine
+        ).trim().slice(0, 80);
+        notifyApp({ type: 'context', href: link ? link.href : null, text });
+        return true;
+    }
+
     /** Xử lý một phím; trả về true nếu đã dùng phím (để chặn hành vi mặc định của trang). */
     function handleKey(key) {
+        if ( key === 'F9' ) { return requestBlockMenu(); }
         // App gửi Escape khi bấm Back lúc đang phóng to bằng CSS.
         if ( key === 'Escape' ) {
             if ( pseudoFull === null ) { return false; }

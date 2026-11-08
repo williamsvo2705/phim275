@@ -134,6 +134,42 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     }
     private val ublockObserver: (UblockState) -> Unit = { state -> onUblockState(state) }
 
+    /** Giữ OK ở chế độ chuyển khối: hỏi extension liên kết của khối đang chọn (phím F9). */
+    private var awaitingBlockMenu = false
+    private val spatialLongPress = Runnable {
+        centerLongPressFired = true
+        awaitingBlockMenu = true
+        sendKeyToPage(KeyEvent.KEYCODE_F9, 0)
+        handler.postDelayed(blockMenuFallback, BLOCK_MENU_TIMEOUT_MS)
+    }
+
+    /** Trang không có extension (trang nội bộ, chưa chọn khối…) → menu chung. */
+    private val blockMenuFallback = Runnable {
+        if (awaitingBlockMenu) {
+            awaitingBlockMenu = false
+            showMainMenu()
+        }
+    }
+
+    private fun onBlockContext(href: String?, text: String) {
+        if (!awaitingBlockMenu) return
+        awaitingBlockMenu = false
+        handler.removeCallbacks(blockMenuFallback)
+        if (href == null) {
+            showMainMenu()
+            return
+        }
+        showMenu(text.ifBlank { href }.take(60), listOf(
+            MenuItem("Mở") { currentSession?.loadUri(href) },
+            MenuItem("Mở trong tab mới") { tabs.newTab(href, settings.desktopModeDefault) },
+            MenuItem("Thêm vào bookmark") {
+                bookmarks.add(href, text.ifBlank { null })
+                showToast("Đã thêm vào bookmark")
+            },
+            MenuItem("☰ Menu trang…") { showMainMenu() },
+        ))
+    }
+
     private val currentTab: BrowserTab? get() = tabs.current
     private val currentSession: GeckoSession? get() = tabs.current?.session
     private val currentUrl: String? get() = tabs.current?.url
@@ -168,6 +204,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         applyNavMode()
         BrowserRuntime.observeUblock(ublockObserver)
         TvNavBridge.tapListener = ::tapAtFraction
+        TvNavBridge.contextListener = ::onBlockContext
         TvNavBridge.pseudoFullscreenListener = { on ->
             pseudoFullscreen = on
             if (on) enterPageMode()
@@ -250,6 +287,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         BrowserRuntime.removeObserver(ublockObserver)
         TvNavBridge.tapListener = null
         TvNavBridge.pseudoFullscreenListener = null
+        TvNavBridge.contextListener = null
         handler.removeCallbacksAndMessages(null)
         cursor.release()
         if (isFinishing) tabs.closeAll()
@@ -1219,17 +1257,17 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     /**
      * OK: chế độ con trỏ → chạm thật tại con trỏ (nhấn = chạm, giữ = chạm lâu → menu chuột phải của trang).
-     * Chế độ phím Tab → gửi Enter cho phần tử đang được chọn.
+     * Chế độ chuyển khối → gửi Enter cho khối đang chọn; giữ OK → menu của khối (liên kết) hoặc menu chung.
      */
     private fun handleCenterKey(event: KeyEvent) {
         if (!isCursorMode()) {
             when {
                 event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 -> {
                     centerLongPressFired = false
-                    handler.postDelayed(centerLongPressFallback, LONG_PRESS_MENU_MS)
+                    handler.postDelayed(spatialLongPress, LONG_PRESS_MENU_MS)
                 }
                 event.action == KeyEvent.ACTION_UP -> {
-                    handler.removeCallbacks(centerLongPressFallback)
+                    handler.removeCallbacks(spatialLongPress)
                     if (!centerLongPressFired) sendKeyToPage(KeyEvent.KEYCODE_ENTER, 0)
                 }
             }
@@ -1382,10 +1420,18 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private fun homeUrl(): String {
         val marks = JSONArray()
         bookmarks.all().take(HOME_BOOKMARKS).forEach { marks.put(JSONObject().put("u", it.url).put("t", it.title)) }
+        // "Xem gần đây": các trang vừa xem (mới nhất trước) để bấm xem tiếp.
+        val recent = JSONArray()
+        history.all()
+            .filter { it.title.isNotBlank() && it.title != it.url } // trang chưa có tiêu đề
+            .distinctBy { it.title } // trang phim + trang tập thường trùng tiêu đề
+            .take(HOME_RECENT)
+            .forEach { recent.put(JSONObject().put("u", it.url).put("t", it.title)) }
         val data = JSONObject()
             .put("s", settings.searchEngine.template)
             .put("n", settings.searchEngine.label)
             .put("b", marks)
+            .put("r", recent)
         return HOME_URL + "#" + enc(data.toString())
     }
 
@@ -1410,6 +1456,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val REQ_VOICE = 1001
         private const val IME_CHECK_MS = 700L
         private const val DOUBLE_PRESS_MS = 450L
+        private const val BLOCK_MENU_TIMEOUT_MS = 600L
+        private const val HOME_RECENT = 6
         private const val HOME_BOOKMARKS = 18
         private const val DIAG_REFRESH_MS = 2000L
         private const val MIN_TAP_MS = 40L
