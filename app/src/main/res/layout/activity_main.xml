@@ -65,9 +65,10 @@
             android:textColorHint="@color/text_dim"
             android:textSize="18sp" />
 
-        <TextView android:id="@+id/btn_desktop" style="@style/ToolbarButton" android:text="@string/btn_mobile" />
-        <TextView android:id="@+id/btn_filters" style="@style/ToolbarButton" android:text="@string/btn_filters" />
-        <TextView android:id="@+id/btn_diag" style="@style/ToolbarButton" android:text="@string/btn_diag" />
+        <TextView android:id="@+id/btn_voice" style="@style/ToolbarButton" android:text="@string/btn_voice" />
+        <TextView android:id="@+id/btn_bookmark" style="@style/ToolbarButton" android:text="@string/btn_bookmark_add" />
+        <TextView android:id="@+id/btn_tabs" style="@style/ToolbarButton" android:text="@string/btn_tabs" />
+        <TextView android:id="@+id/btn_menu" style="@style/ToolbarButton" android:text="@string/btn_menu" />
     </LinearLayout>
 
     <TextView

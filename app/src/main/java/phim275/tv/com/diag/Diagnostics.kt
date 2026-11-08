@@ -23,7 +23,7 @@ class Diagnostics(context: Context) {
     var blockedPopups = 0
     var blockedAppRedirects = 0
 
-    fun snapshot(ublockStatus: String, currentUrl: String?): String {
+    fun snapshot(ublockStatus: String, currentUrl: String?, extra: List<String> = emptyList()): String {
         val mem = memoryInfo()
         val dm = appContext.resources.displayMetrics
         return buildString {
@@ -41,6 +41,7 @@ class Diagnostics(context: Context) {
             appendLine("RAM app  : +${mb(baselineAvailBytes - mem.availMem)} từ lúc mở · UI ${Debug.getPss() / 1024} MB")
             appendLine("Tải trang: ${lastPageLoadMs?.let { String.format(Locale.US, "%.1f s", it / 1000.0) } ?: "—"}")
             appendLine("Đã chặn  : $blockedPopups popup · $blockedAppRedirects chuyển app")
+            extra.forEach { appendLine(it) }
             append("URL      : ${currentUrl?.take(70) ?: "—"}")
         }
     }

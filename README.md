@@ -5,19 +5,23 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **Phase 0 — bản thử nghiệm (PoC)**. Mục tiêu: đo hiệu năng thật trên máy 2GB RAM.
+> Trạng thái: **0.2.0** — đủ tính năng chính, đang thử nghiệm trên máy thật (máy chiếu 2GB RAM).
 
-## Tính năng hiện có
+## Tính năng
 
 | Nhóm | Chi tiết |
 |---|---|
-| Nhân trình duyệt | [GeckoView](https://mozilla.github.io/geckoview/) 159 (Firefox) |
+| Nhân trình duyệt | [GeckoView](https://mozilla.github.io/geckoview/) 159 (Firefox) · nhiều tab (tối đa 6, 2 tab trong RAM, tab nền tự giải phóng) · trang lỗi tiếng Việt · tải file vào thư mục Download |
 | Chặn quảng cáo | [uBlock Origin](https://github.com/gorhill/uBlock) 1.75.4 tích hợp sẵn · EasyList, EasyPrivacy, uBO filters, AdGuard Mobile, **ABPVN**, Popup Overlays, Annoyances, [bộ lọc riêng Phim275](filters/phim275.txt) |
-| Chặn popup (tầng app) | Chặn tab mới khác tên miền, chặn `intent://` / `market://` mở app khác, tắt `alert()`, từ chối thông báo đẩy |
-| DNS | DNS-over-HTTPS (AdGuard DNS): vượt chặn DNS nhà mạng + chặn thêm tên miền quảng cáo |
-| Remote | Con trỏ ảo tăng tốc, chạm mép để cuộn (cuộn đúng khung dưới con trỏ), Back/Giữ Back/Menu, CH+/CH− |
-| RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, tự khôi phục khi tab bị hệ thống giết |
-| Chẩn đoán | Bảng thông số thiết bị, RAM, số popup đã chặn (nút **Chẩn đoán**) |
+| Điều khiển uBO từ app | Cầu nối native messaging ([phim275-bridge.js](tools/ublock-bridge/phim275-bridge.js)): bật/tắt chặn theo trang, chọn phần tử để ẩn, xóa tạm phần tử, cập nhật bộ lọc, đếm yêu cầu đã chặn |
+| Chặn popup (tầng app) | Chặn tab mới khác tên miền, chặn `intent://` / `market://`, tắt `alert()`, từ chối thông báo đẩy · mở lại popup vừa chặn từ Menu |
+| DNS | DNS-over-HTTPS (AdGuard DNS), bật/tắt trong Cài đặt |
+| Remote | Con trỏ ảo tăng tốc · giữ OK = menu chuột phải (mở link tab mới, bookmark link) · chế độ phím Tab · cuộn đúng khung dưới con trỏ · Back/Giữ Back/Menu · CH+/CH− · tìm kiếm giọng nói |
+| Nhập chữ | Ép hiện bàn phím TV (LeanKey, Gboard…) · ô nhập dự phòng tự bật khi bàn phím không hiện |
+| Tiện ích | Bookmark (hiện trên trang chủ), lịch sử, chọn công cụ tìm kiếm (Google, Cốc Cốc, Bing, DuckDuckGo, YouTube), Desktop/Mobile, xóa dữ liệu |
+| Báo lỗi | Menu → Báo trang lỗi → mã QR mở GitHub Issue điền sẵn (quét bằng điện thoại) · ghi log crash |
+| Tự cập nhật | Kiểm tra `latest.json` mỗi ngày → tải, kiểm SHA-256, cài bằng PackageInstaller |
+| RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, giải phóng tab nền khi thiếu RAM, tự khôi phục tab bị giết |
 
 Đo trên emulator Android TV 2GB RAM, bản release, trang 24h.com.vn: **~630MB** tổng RAM của app ·
 adblock-tester.com: **100/100**.

@@ -123,9 +123,11 @@
     "webNavigation",
     "webRequest",
     "webRequestBlocking",
-    "<all_urls>"
+    "<all_urls>",
+    "nativeMessaging",
+    "geckoViewAddons"
   ],
-  "short_name": "uBlock\u2080",
+  "short_name": "uBlock₀",
   "version": "1.75.4",
   "web_accessible_resources": [
     "/web_accessible_resources/*"

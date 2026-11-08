@@ -29,7 +29,7 @@ val releaseSigning: Map<String, String>? = run {
 }
 
 // Mã phiên bản cơ sở; mỗi ABI cộng thêm hậu tố để APK arm64 luôn "mới hơn" APK v7a.
-val baseVersionCode = 1
+val baseVersionCode = 2
 val abiCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86_64" to 3)
 
 android {
@@ -43,7 +43,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = baseVersionCode
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     splits {
@@ -111,4 +111,5 @@ androidComponents {
 dependencies {
     implementation(libs.geckoview)
     testImplementation(libs.junit)
+    testImplementation(libs.orgjson)
 }

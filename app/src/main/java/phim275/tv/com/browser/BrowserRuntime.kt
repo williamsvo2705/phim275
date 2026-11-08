@@ -6,6 +6,7 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.WebExtension
 import phim275.tv.com.BuildConfig
+import phim275.tv.com.data.AppSettings
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -89,7 +90,7 @@ object BrowserRuntime {
             .lowMemoryDetection(true)
             .doubleTapZoomingEnabled(false)
             .inputAutoZoomEnabled(false)
-            .trustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_FIRST)
+            .trustedRecursiveResolverMode(trrMode(AppSettings(appContext).adBlockDns))
             .trustedRecursiveResolverUri(DOH_URI)
             .build()
 
@@ -98,11 +99,20 @@ object BrowserRuntime {
         return rt
     }
 
+    /** Bật/tắt DNS chặn quảng cáo ngay khi đang chạy (không cần khởi động lại). */
+    fun setAdBlockDns(enabled: Boolean) {
+        runtime?.settings?.setTrustedRecursiveResolverMode(trrMode(enabled))
+    }
+
+    private fun trrMode(enabled: Boolean) =
+        if (enabled) GeckoRuntimeSettings.TRR_MODE_FIRST else GeckoRuntimeSettings.TRR_MODE_OFF
+
     private fun installUblock(rt: GeckoRuntime) {
         rt.webExtensionController.ensureBuiltIn(UBLOCK_URI, UBLOCK_ID).accept(
             { ext ->
                 if (ext != null) {
                     Log.i(TAG, "uBlock Origin ${ext.metaData.version} sẵn sàng")
+                    UblockBridge.attach(ext)
                     publish(UblockState.Ready(ext))
                 } else {
                     publish(UblockState.Failed("extension null"))

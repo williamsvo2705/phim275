@@ -4,10 +4,13 @@ agp = "9.5.1"
 kotlin = "2.4.21"
 geckoview = "159.0.20261102144711"
 junit = "4.13.2"
+orgjson = "20260814"
 
 [libraries]
 geckoview = { module = "org.mozilla.geckoview:geckoview", version.ref = "geckoview" }
 junit = { module = "junit:junit", version.ref = "junit" }
+# org.json thật cho unit test JVM (bản trong android.jar chỉ là stub).
+orgjson = { module = "org.json:json", version.ref = "orgjson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

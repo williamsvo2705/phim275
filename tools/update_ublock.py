@@ -111,11 +111,39 @@ def configure_lists(enable: list[str], disable: list[str]) -> None:
     )
 
 
+BRIDGE_SRC = ROOT / "tools" / "ublock-bridge" / "phim275-bridge.js"
+BRIDGE_TAG = '<script src="js/phim275-bridge.js" type="module"></script>'
+
+
+def install_bridge() -> None:
+    """Chèn cầu nối Phim275 vào background của uBO + xin quyền native messaging."""
+    shutil.copyfile(BRIDGE_SRC, DEST / "js" / "phim275-bridge.js")
+
+    bg = DEST / "background.html"
+    html = bg.read_text(encoding="utf-8")
+    anchor = '<script src="js/start.js" type="module"></script>'
+    if anchor not in html:
+        raise SystemExit("background.html của uBO đã đổi cấu trúc — cần cập nhật install_bridge()")
+    if BRIDGE_TAG not in html:
+        html = html.replace(anchor, anchor + "\n" + BRIDGE_TAG)
+        bg.write_text(html, encoding="utf-8")
+
+    manifest_path = DEST / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    perms = manifest.setdefault("permissions", [])
+    for p in ("nativeMessaging", "geckoViewAddons"):
+        if p not in perms:
+            perms.append(p)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("  chèn cầu nối phim275-bridge.js (nativeMessaging)")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")  # console Windows mặc định cp1252
     version = sys.argv[1] if len(sys.argv) > 1 else VERSION_FILE.read_text().strip()
     extract(download_xpi(version))
     configure_lists(EXTRA_ENABLED_LISTS, DISABLED_LISTS)
+    install_bridge()
     local_copy = DEST / PHIM275_LIST_LOCAL
     local_copy.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(PHIM275_LIST_SRC, local_copy)

@@ -6,16 +6,18 @@
     <string name="btn_forward">▶</string>
     <string name="btn_reload">⟳</string>
     <string name="btn_home">Trang chủ</string>
-    <string name="btn_filters">Bộ lọc</string>
-    <string name="btn_desktop">Desktop</string>
-    <string name="btn_mobile">Mobile</string>
-    <string name="btn_diag">Chẩn đoán</string>
-    <string name="popup_blocked">Đã chặn popup: %1$s — GIỮ phím OK trong 4 giây nếu muốn mở</string>
+    <string name="btn_voice">🎤</string>
+    <string name="btn_bookmark_add">☆</string>
+    <string name="btn_bookmark_remove">★</string>
+    <string name="btn_tabs">Tab 1</string>
+    <string name="btn_tabs_count">Tab %1$d</string>
+    <string name="btn_menu">☰ Menu</string>
+    <string name="popup_blocked">Đã chặn popup: %1$s (mở lại trong ☰ Menu nếu cần)</string>
+    <string name="scheme_blocked">Đã chặn chuyển hướng sang ứng dụng khác (%1$s)</string>
+    <string name="press_back_again">Nhấn Back lần nữa để thoát</string>
+    <string name="ublock_loading">Bộ chặn quảng cáo đang khởi động, thử lại sau vài giây…</string>
+    <string name="ublock_failed">Không tải được bộ chặn quảng cáo: %1$s</string>
     <string name="session_crashed">Trang bị lỗi hoặc thiếu bộ nhớ — đang tải lại…</string>
     <string name="ok">Đồng ý</string>
     <string name="cancel">Hủy</string>
-    <string name="scheme_blocked">Đã chặn chuyển hướng sang ứng dụng khác (%1$s)</string>
-    <string name="press_back_again">Nhấn Back lần nữa để thoát</string>
-    <string name="ublock_loading">Đang tải bộ chặn quảng cáo…</string>
-    <string name="ublock_failed">Không tải được bộ chặn quảng cáo: %1$s</string>
 </resources>
