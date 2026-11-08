@@ -46,20 +46,22 @@
         <TextView android:id="@+id/btn_reload" style="@style/ToolbarButton" android:text="@string/btn_reload" />
         <TextView android:id="@+id/btn_home" style="@style/ToolbarButton" android:text="@string/btn_home" />
 
-        <EditText
+        <!-- Không dùng EditText: bàn phím TV (LeanKey…) tự bật khi ô nhập nhận focus → kẹt.
+             Bấm OK vào ô này để mở hộp nhập địa chỉ. -->
+        <TextView
             android:id="@+id/url_bar"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
             android:background="@drawable/toolbar_button_bg"
+            android:clickable="true"
+            android:ellipsize="middle"
+            android:focusable="true"
+            android:gravity="center_vertical"
             android:hint="@string/url_hint"
-            android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
-            android:importantForAutofill="no"
-            android:inputType="textUri"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
-            android:selectAllOnFocus="true"
             android:singleLine="true"
             android:textColor="@color/text"
             android:textColorHint="@color/text_dim"

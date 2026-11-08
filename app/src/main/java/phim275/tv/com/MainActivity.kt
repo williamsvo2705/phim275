@@ -54,6 +54,7 @@ import phim275.tv.com.browser.MediaKeys
 import phim275.tv.com.browser.SitePolicy
 import phim275.tv.com.browser.TabManager
 import phim275.tv.com.browser.TabPolicy
+import phim275.tv.com.browser.TvNavBridge
 import phim275.tv.com.browser.UblockBridge
 import phim275.tv.com.browser.UrlInput
 import phim275.tv.com.cursor.CursorController
@@ -80,7 +81,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private lateinit var cursorView: CursorView
     private lateinit var cursor: CursorController
     private lateinit var toolbar: View
-    private lateinit var urlBar: EditText
+    private lateinit var urlBar: TextView
     private lateinit var progress: ProgressBar
     private lateinit var diagPanel: TextView
     private lateinit var btnTabs: TextView
@@ -157,6 +158,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         setupToolbar()
         applyNavMode()
         BrowserRuntime.observeUblock(ublockObserver)
+        TvNavBridge.tapListener = ::tapAtFraction
 
         tabs.newTab(intent?.dataString ?: homeUrl(), settings.desktopModeDefault)
         enterPageMode()
@@ -187,6 +189,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     override fun onDestroy() {
         BrowserRuntime.removeObserver(ublockObserver)
+        if (TvNavBridge.tapListener != null) TvNavBridge.tapListener = null
         handler.removeCallbacksAndMessages(null)
         cursor.release()
         if (isFinishing) tabs.closeAll()
@@ -278,10 +281,12 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
      * Ô nhập chữ của app (EditText thường luôn bật được bàn phím TV).
      * forPage = true: điền chữ vào ô đang chọn trên trang; false: tìm kiếm / mở địa chỉ.
      */
-    private fun showTextEntryDialog(forPage: Boolean) {
+    private fun showTextEntryDialog(forPage: Boolean, prefill: String = "") {
         val input = EditText(this).apply {
             setSingleLine()
             textSize = 22f
+            setText(prefill)
+            setSelectAllOnFocus(true)
             imeOptions = EditorInfo.IME_ACTION_GO
             hint = if (forPage) "Gõ nội dung cần nhập" else getString(R.string.url_hint)
             if (!forPage) inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI or android.text.InputType.TYPE_CLASS_TEXT
@@ -624,14 +629,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         btnTabs.setOnClickListener { showTabsMenu() }
         findViewById<View>(R.id.btn_menu).setOnClickListener { showMainMenu() }
 
-        urlBar.setOnEditorActionListener { _, actionId, event ->
-            val isGo = actionId == EditorInfo.IME_ACTION_GO ||
-                (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-            if (isGo) {
-                navigate(urlBar.text.toString())
-                enterPageMode()
-            }
-            isGo
+        // Ô URL chỉ là nút: bấm OK mới mở hộp nhập (bàn phím không tự bật khi lướt qua thanh công cụ).
+        urlBar.setOnClickListener {
+            enterPageMode()
+            showTextEntryDialog(forPage = false, prefill = displayUrl(currentUrl))
         }
     }
 
@@ -687,6 +688,11 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 blockedPopupUrl = null
                 tabs.newTab(popup, settings.desktopModeDefault)
             }
+        }
+        items += if (settings.navMode == NavMode.CURSOR) {
+            MenuItem("▦ Đổi sang chuyển khối bằng phím mũi tên") { setNavMode(NavMode.SPATIAL) }
+        } else {
+            MenuItem("🖱 Đổi sang con trỏ chuột") { setNavMode(NavMode.CURSOR) }
         }
         items += MenuItem("🔍 Tìm kiếm / nhập địa chỉ") { showTextEntryDialog(forPage = false) }
         items += MenuItem("⌨ Nhập chữ vào ô đang chọn trên trang (khi bàn phím không hiện)") { showTextEntryDialog(forPage = true) }
@@ -830,8 +836,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             },
             MenuItem("Điều khiển: ${settings.navMode.label}") {
                 showChoice("Cách điều khiển bằng remote", NavMode.entries, settings.navMode, { it.label }) {
-                    settings.navMode = it
-                    applyNavMode()
+                    setNavMode(it)
                 }
             },
             MenuItem("DNS chặn quảng cáo (AdGuard): ${if (settings.adBlockDns) "BẬT" else "TẮT"}") {
@@ -1001,6 +1006,18 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     // ───────────────────────────── Phím remote ─────────────────────────────
 
+    private fun setNavMode(mode: NavMode) {
+        settings.navMode = mode
+        applyNavMode()
+        showToast(
+            if (mode == NavMode.CURSOR) {
+                "Con trỏ chuột: ◀▲▶▼ di chuyển, OK bấm"
+            } else {
+                "Chuyển khối: ◀▲▶▼ chọn khối (viền đỏ), OK bấm"
+            },
+        )
+    }
+
     private fun applyNavMode(forceCursor: Boolean = false) {
         val useCursor = forceCursor || settings.navMode == NavMode.CURSOR
         cursorView.visibility = if (useCursor) View.VISIBLE else View.GONE
@@ -1064,7 +1081,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         if (isCursorMode()) {
             if (cursor.handleKey(event)) return true
         } else if (code in CursorController.DIRECTION_KEYS) {
-            if (event.action == KeyEvent.ACTION_DOWN) moveFocusWithTab(code)
+            if (event.action == KeyEvent.ACTION_DOWN) moveSpatialFocus(code)
             return true
         }
 
@@ -1176,9 +1193,18 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
     }
 
-    private fun moveFocusWithTab(code: Int) {
-        val backward = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_LEFT
-        sendKeyToPage(KeyEvent.KEYCODE_TAB, if (backward) KeyEvent.META_SHIFT_ON else 0)
+    /** Chế độ chuyển khối: gửi phím mũi tên vào trang, extension tvnav chọn khối kế tiếp. */
+    private fun moveSpatialFocus(code: Int) {
+        sendKeyToPage(code, 0)
+    }
+
+    /** Extension tvnav yêu cầu chạm vào giữa khối đang chọn (fx, fy ∈ [0,1]). */
+    private fun tapAtFraction(fx: Float, fy: Float) {
+        val x = fx * geckoView.width
+        val y = fy * geckoView.height
+        val downTime = SystemClock.uptimeMillis()
+        dispatchTouch(downTime, downTime, MotionEvent.ACTION_DOWN, x, y)
+        handler.postDelayed({ dispatchTouch(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y) }, MIN_TAP_MS)
     }
 
     private fun sendKeyToPage(keyCode: Int, meta: Int) {
@@ -1295,7 +1321,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val POPUP_RESCUE_WINDOW_MS = 60_000L
         private const val EXIT_CONFIRM_WINDOW_MS = 2000L
         private const val AUTO_UPDATE_DELAY_MS = 15_000L
-        private const val TOP_PUSH_TO_TOOLBAR_PX = 220f
+        private const val TOP_PUSH_TO_TOOLBAR_PX = 480f
         private const val PAGE_SCROLL_FRACTION = 0.8
     }
 }

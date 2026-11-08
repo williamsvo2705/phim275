@@ -7,12 +7,17 @@ class AppSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("phim275_settings", Context.MODE_PRIVATE)
 
     enum class NavMode(val id: String, val label: String) {
+        /** Mặc định: phím mũi tên nhảy giữa các khối bấm được (kiểu Android TV). */
+        SPATIAL("spatial", "Chuyển khối bằng phím mũi tên (kiểu Android TV)"),
         CURSOR("cursor", "Con trỏ chuột"),
-        TAB_KEYS("tab", "Nhảy giữa các liên kết (phím Tab)"),
         ;
 
         companion object {
-            fun fromId(id: String?) = entries.firstOrNull { it.id == id } ?: CURSOR
+            /** "tab" là chế độ phím Tab cũ (0.2.x) → chuyển sang chế độ chuyển khối. */
+            fun fromId(id: String?) = when (id) {
+                CURSOR.id -> CURSOR
+                else -> SPATIAL
+            }
         }
     }
 

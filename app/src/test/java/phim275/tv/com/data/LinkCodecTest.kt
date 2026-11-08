@@ -35,6 +35,12 @@ class LinkCodecTest {
         assertFalse(LinkStore.isRecordable(null))
     }
 
+    @Test fun `chế độ điều khiển mặc định là chuyển khối, chế độ Tab cũ cũng chuyển sang`() {
+        assertEquals(AppSettings.NavMode.SPATIAL, AppSettings.NavMode.fromId(null))
+        assertEquals(AppSettings.NavMode.SPATIAL, AppSettings.NavMode.fromId("tab"))
+        assertEquals(AppSettings.NavMode.CURSOR, AppSettings.NavMode.fromId("cursor"))
+    }
+
     @Test fun `công cụ tìm kiếm không rõ thì dùng Google`() {
         assertEquals(SearchEngine.GOOGLE, SearchEngine.fromId("không-có"))
         assertEquals(SearchEngine.COCCOC, SearchEngine.fromId("coccoc"))

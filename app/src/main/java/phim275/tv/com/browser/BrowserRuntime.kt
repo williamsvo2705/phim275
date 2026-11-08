@@ -100,6 +100,7 @@ object BrowserRuntime {
 
         val rt = GeckoRuntime.create(appContext, settings)
         installUblock(rt)
+        TvNavBridge.install(rt)
         return rt
     }
 
