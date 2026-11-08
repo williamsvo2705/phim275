@@ -31,6 +31,8 @@ class TabManager(
     /** Gắn delegate cho session mới tạo (trước khi open). */
     private val configureSession: (GeckoSession) -> Unit,
     private val listener: Listener,
+    /** Số tab tối đa giữ trong RAM (máy RAM thấp: 1). */
+    private val maxLiveTabs: Int = TabPolicy.MAX_LIVE_TABS,
 ) {
     interface Listener {
         fun onCurrentTabChanged(tab: BrowserTab)
@@ -74,7 +76,7 @@ class TabManager(
         geckoView.setSession(session)
         session.setActive(true)
         setExtensionTabActive(session, true)
-        TabPolicy.tabsToDiscard(infos()).forEach { id -> _tabs.firstOrNull { it.id == id }?.let(::discard) }
+        TabPolicy.tabsToDiscard(infos(), maxLiveTabs).forEach { id -> _tabs.firstOrNull { it.id == id }?.let(::discard) }
         listener.onCurrentTabChanged(tab)
     }
 

@@ -64,6 +64,8 @@ object BrowserRuntime {
         "browser.sessionhistory.max_total_viewers" to "0",
         // Giới hạn cache trong RAM (KB).
         "browser.cache.memory.capacity" to "32768",
+        // Bộ nhớ đệm ảnh đã giải mã: mặc định tới ~¼ RAM (≈400MB trên máy 1,6GB) → giới hạn 128MB.
+        "image.mem.surfacecache.max_size_kb" to "131072",
     )
 
     private fun writeGeckoConfig(appContext: Context): String {

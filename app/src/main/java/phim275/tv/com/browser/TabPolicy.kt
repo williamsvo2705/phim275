@@ -6,6 +6,11 @@ object TabPolicy {
     const val MAX_TABS = 6
     const val MAX_LIVE_TABS = 2
 
+    /** Dưới ngưỡng này (vd. máy chiếu OnePlus H93A: 1656MB dùng được) chỉ giữ 1 tab trong RAM. */
+    const val LOW_RAM_THRESHOLD_BYTES = 2_500L * 1024 * 1024
+
+    fun maxLiveTabsFor(totalRamBytes: Long): Int = if (totalRamBytes < LOW_RAM_THRESHOLD_BYTES) 1 else MAX_LIVE_TABS
+
     data class TabInfo(val id: Int, val lastActiveMs: Long, val isCurrent: Boolean, val isLive: Boolean)
 
     /** Tab cần đóng hẳn khi mở thêm tab mới mà đã đủ [max] tab: tab cũ nhất không phải tab hiện tại. */

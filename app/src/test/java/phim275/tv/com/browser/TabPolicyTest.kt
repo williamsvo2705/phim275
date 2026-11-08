@@ -33,6 +33,12 @@ class TabPolicyTest {
         assertEquals(emptyList<Int>(), TabPolicy.tabsToDiscard(tabs, maxLive = 3))
     }
 
+    @Test fun `máy RAM thấp chỉ giữ 1 tab trong RAM`() {
+        val mb = 1024L * 1024
+        assertEquals(1, TabPolicy.maxLiveTabsFor(1656 * mb)) // OnePlus H93A
+        assertEquals(TabPolicy.MAX_LIVE_TABS, TabPolicy.maxLiveTabsFor(4096 * mb))
+    }
+
     @Test fun `không bao giờ giải phóng tab hiện tại`() {
         val tabs = listOf(TabInfo(1, 1, isCurrent = true, isLive = true), TabInfo(2, 2, isCurrent = false, isLive = true))
         assertEquals(listOf(2), TabPolicy.tabsToDiscard(tabs, maxLive = 0))

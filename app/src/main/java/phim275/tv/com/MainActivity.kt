@@ -151,7 +151,9 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         cursor = CursorController(cursorView, this)
 
         runtime = BrowserRuntime.get(this)
-        tabs = TabManager(runtime, geckoView, ::configureSession, this)
+        val totalRam = android.app.ActivityManager.MemoryInfo()
+            .also { getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(it) }.totalMem
+        tabs = TabManager(runtime, geckoView, ::configureSession, this, TabPolicy.maxLiveTabsFor(totalRam))
         setupToolbar()
         applyNavMode()
         BrowserRuntime.observeUblock(ublockObserver)
