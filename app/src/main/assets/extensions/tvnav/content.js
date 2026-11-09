@@ -23,6 +23,9 @@
     const DIALOG_KEY_TAG = 'phim275-tvnav-dialog-key';
     const DIALOG_STATE_TAG = 'phim275-tvnav-dialog-state';
     const DIALOG_BUTTONS = 'button, [role=button], a[href], input[type=button], input[type=submit]';
+    // Xem liền mạch: trang chính hỏi iframe trình phát "video đã chạy chưa?" trước khi tự bấm phát tập mới.
+    const PLAY_ASK_TAG = 'phim275-tvnav-play-ask';
+    const PLAY_STATE_TAG = 'phim275-tvnav-play-state';
     // Dữ liệu postMessage thuộc compartment của trang → `instanceof Object` trong content script luôn sai.
     const isObj = d => typeof d === 'object' && d !== null;
 
@@ -88,6 +91,17 @@
             ev.stopImmediatePropagation();
             try { window.top.postMessage({ [FORWARD_TAG]: ev.key }, '*'); } catch { }
         }, true);
+        addEventListener('message', ev => {
+            if ( !isObj(ev.data) || ev.data[PLAY_ASK_TAG] !== true || ev.source !== window.parent ) { return; }
+            const videos = document.querySelectorAll('video');
+            let playing = false;
+            for ( const v of videos ) { if ( !v.paused && !v.ended ) { playing = true; } }
+            const ready = document.readyState === 'complete';
+            const age = ready ? Math.round(performance.now() - loadedAt) : 0;
+            try { window.parent.postMessage({ [PLAY_STATE_TAG]: { playing, video: videos.length > 0, ready, age } }, '*'); } catch { }
+        });
+        let loadedAt = performance.now();
+        if ( document.readyState !== 'complete' ) { addEventListener('load', ( ) => { loadedAt = performance.now(); }, { once: true }); }
         frameDialog();
         return;
     }
@@ -264,6 +278,7 @@
             lastHref = location.href;
             schedulePlayerPick();
             scheduleNextCheck();
+            scheduleAutoplay(); // trang SPA: tập mới hiện ra mà không tải lại
         }
     }
 
@@ -857,6 +872,9 @@
             notifyApp({ type: 'nextEp', label: null, top: location.href });
             return;
         }
+        // Tập mới tự phát; đang toàn màn hình thì tập mới cũng toàn màn hình.
+        autoplay = { t: Date.now(), fs: isFullscreen() };
+        try { sessionStorage.setItem(AUTOPLAY_KEY, JSON.stringify(autoplay)); } catch { }
         if ( pseudoFull !== null ) { setPseudoFullscreen(null, false); }
         const el = found.el;
         const before = location.href;
@@ -868,11 +886,84 @@
         }
     }
 
+    // ── Xem liền mạch ───────────────────────────────────────────────────────
+    // Tập mở bằng "Tập tiếp theo": chờ trình phát xuất hiện; nếu trang chưa tự phát thì chạm thật vào trình phát
+    // MỘT lần (chạm lần nữa có thể thành tạm dừng); khi phim chạy mà tập trước đang toàn màn hình → phóng to.
+    const AUTOPLAY_KEY = 'phim275-autoplay';
+    const AUTOPLAY_WINDOW_MS = 45000;   // box 1GB tải trang chậm
+    const AUTOPLAY_TRY_MS = [ 1500, 3000, 4500, 6000, 8000, 10000, 13000, 16000, 20000, 25000, 31000, 38000 ];
+    const AUTOPLAY_SETTLE_MS = 1500;    // trình phát trong iframe vừa tải xong: chờ nó dựng nút ▶ rồi mới chạm
+    const AUTOPLAY_RETAP_MS = 4000;
+    let autoplay = null;                // { t, fs, taps, lastTap }
+    try {
+        const raw = sessionStorage.getItem(AUTOPLAY_KEY);
+        if ( raw !== null ) {
+            sessionStorage.removeItem(AUTOPLAY_KEY);
+            const a = JSON.parse(raw);
+            if ( isObj(a) && Date.now() - a.t < AUTOPLAY_WINDOW_MS ) { autoplay = a; }
+        }
+    } catch { }
+
+    function scheduleAutoplay() {
+        if ( autoplay === null ) { return; }
+        for ( const ms of AUTOPLAY_TRY_MS ) { setTimeout(tryAutoplay, ms); }
+    }
+
+    /**
+     * Trạng thái trình phát: { answered, playing, video, ready, age }. Iframe khác tên miền: hỏi qua postMessage
+     * (chưa trả lời = trang trong iframe chưa tải xong). `playing` = video không ở trạng thái dừng — đúng cả lúc
+     * đang tải sau lệnh phát, nên chạm thêm khi playing = false không thể biến thành bấm dừng.
+     */
+    function playerState(player) {
+        if ( player.tagName === 'VIDEO' ) {
+            return Promise.resolve({ answered: true, playing: !player.paused && !player.ended, video: true, ready: true, age: 1e9 });
+        }
+        const none = { answered: false, playing: false, video: false, ready: false, age: 0 };
+        const win = player.contentWindow;
+        if ( win === null ) { return Promise.resolve(none); }
+        return new Promise(resolve => {
+            const done = st => { removeEventListener('message', onReply); clearTimeout(timer); resolve(st); };
+            const onReply = ev => {
+                const st = isObj(ev.data) ? ev.data[PLAY_STATE_TAG] : null;
+                if ( ev.source !== win || !isObj(st) ) { return; }
+                done({ answered: true, playing: st.playing === true, video: st.video === true, ready: st.ready === true, age: Number(st.age) || 0 });
+            };
+            const timer = setTimeout(( ) => done(none), 400);
+            addEventListener('message', onReply);
+            try { win.postMessage({ [PLAY_ASK_TAG]: true }, '*'); } catch { done(none); }
+        });
+    }
+
+    function tryAutoplay() {
+        if ( autoplay === null ) { return; }
+        if ( Date.now() - autoplay.t > AUTOPLAY_WINDOW_MS ) { autoplay = null; return; }
+        const player = findPlayer();
+        if ( player === null ) { return; }
+        playerState(player).then(st => {
+            if ( autoplay === null ) { return; }
+            if ( st.playing ) {
+                const fs = autoplay.fs;
+                autoplay = null;
+                if ( fs && !isFullscreen() ) { setPseudoFullscreen(player, true); }
+                return;
+            }
+            // Trình phát chưa sẵn sàng (iframe chưa tải xong / chưa kịp dựng nút ▶) → chờ lần sau.
+            if ( !st.answered || !st.ready || (!st.video && st.age < AUTOPLAY_SETTLE_MS) ) { return; }
+            const taps = autoplay.taps || 0;
+            if ( taps >= 2 || Date.now() - (autoplay.lastTap || 0) < AUTOPLAY_RETAP_MS ) { return; }
+            autoplay.taps = taps + 1;
+            autoplay.lastTap = Date.now();
+            select(player);
+            activate(); // chạm thật (cử chỉ người dùng) → trình phát chịu phát cả khi có tiếng
+        });
+    }
+
     if ( document.readyState === 'complete' ) {
         schedulePlayerPick();
         scheduleNextCheck();
+        scheduleAutoplay();
     } else {
-        addEventListener('load', ( ) => { schedulePlayerPick(); scheduleNextCheck(); }, { once: true });
+        addEventListener('load', ( ) => { schedulePlayerPick(); scheduleNextCheck(); scheduleAutoplay(); }, { once: true });
     }
 
     addEventListener('keydown', ev => {

@@ -161,7 +161,18 @@ class SidePanel(context: Context) : FrameLayout(context) {
         scrim.animate().alpha(1f).setDuration(200).start()
     }
 
-    private fun focusedRowIndex(): Int = rows.indexOfFirst { it.isFocused }.coerceAtLeast(0)
+    /**
+     * Bảng đang mở mà focus lại nằm ngoài (trang web giành focus, view vừa ẩn trả focus sai chỗ…) →
+     * kéo focus về dòng đang chọn. Trả true nếu đã phải kéo về (phím đó coi như đã dùng).
+     */
+    fun reclaimFocus(): Boolean {
+        if (!isShowing || hasFocus() || rows.isEmpty()) return false
+        val page = stack.lastOrNull()
+        rows.getOrNull((page?.focusIndex ?: 0).coerceIn(0, rows.size - 1))?.requestFocus()
+        return true
+    }
+
+    private fun focusedRowIndex(): Int =rows.indexOfFirst { it.isFocused }.coerceAtLeast(0)
 
     private fun render(page: Page) {
         titleView.text = page.title

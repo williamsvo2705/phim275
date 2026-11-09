@@ -1522,6 +1522,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                     return true
                 }
             }
+            // Focus lạc ra trang web phía sau → phím đầu tiên chỉ kéo focus về bảng, không lọt xuống trang.
+            if (event.action == KeyEvent.ACTION_DOWN && panel.reclaimFocus()) return true
             return super.dispatchKeyEvent(event)
         }
         if (isToolbarMode()) {
@@ -1792,7 +1794,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         // "Xem gần đây": các trang vừa xem (mới nhất trước) để bấm xem tiếp.
         val recent = JSONArray()
         history.all()
-            .filter { it.title.isNotBlank() && it.title != it.url } // trang chưa có tiêu đề
+            .filter { it.title.isNotBlank() && it.title != it.url && !LinkStore.isErrorTitle(it.title) } // chưa có tiêu đề / trang lỗi
             .distinctBy { it.title } // trang phim + trang tập thường trùng tiêu đề
             .take(HOME_RECENT)
             .forEach { link ->

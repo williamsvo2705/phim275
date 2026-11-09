@@ -62,5 +62,15 @@ class LinkStore(context: Context, private val key: String, private val max: Int)
         /** Không lưu trang nội bộ vào lịch sử. */
         fun isRecordable(url: String?): Boolean =
             url != null && (url.startsWith("http://") || url.startsWith("https://"))
+
+        private val ERROR_TITLE = Regex(
+            """^(?:\(?\d{3}\)?\s*[-:–]?\s*)?(?:not found|forbidden|bad gateway|service unavailable|server error|page not found)\b""" +
+                """|^(?:error|lỗi)\s*\d{3}\b|^\d{3}\s*(?:not found|forbidden|error)\b|không tìm thấy trang|trang không tồn tại""" +
+                """|^(?:just a moment|attention required)""",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** Tiêu đề trang lỗi / trang chặn bot ("404 Not Found", "Lỗi 404", "Just a moment…") → không đưa vào "Xem tiếp". */
+        fun isErrorTitle(title: String?): Boolean = title != null && ERROR_TITLE.containsMatchIn(title.trim())
     }
 }

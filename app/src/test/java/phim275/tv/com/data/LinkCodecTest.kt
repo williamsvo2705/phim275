@@ -35,6 +35,16 @@ class LinkCodecTest {
         assertFalse(LinkStore.isRecordable(null))
     }
 
+    @Test fun `nhận ra tiêu đề trang lỗi`() {
+        listOf("404 Not Found", "Not Found", "403 Forbidden", "502 Bad Gateway", "Lỗi 404 - Không tìm thấy trang",
+            "Error 500", "Just a moment...", "Attention Required! | Cloudflare").forEach {
+            assertTrue(it, LinkStore.isErrorTitle(it))
+        }
+        listOf("Phim Bác Sĩ X Tập 1", "Mục Thần Ký Tập 100", "VnExpress - Báo tiếng Việt", "Tìm kiếm lỗi xe máy", null).forEach {
+            assertFalse(it.toString(), LinkStore.isErrorTitle(it))
+        }
+    }
+
     @Test fun `chế độ điều khiển mặc định là chuyển khối, chế độ Tab cũ cũng chuyển sang`() {
         assertEquals(AppSettings.NavMode.SPATIAL, AppSettings.NavMode.fromId(null))
         assertEquals(AppSettings.NavMode.SPATIAL, AppSettings.NavMode.fromId("tab"))
