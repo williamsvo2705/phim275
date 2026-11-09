@@ -58,6 +58,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_NEXT, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_NEXT, value).apply()
 
+    /** Số lần đã nhắc "▼ / Menu: tốc độ, chất lượng" khi vào toàn màn hình (nhắc vài lần đầu). */
+    var videoOptionsHints: Int
+        get() = prefs.getInt(KEY_VIDEO_HINTS, 0)
+        set(value) = prefs.edit().putInt(KEY_VIDEO_HINTS, value).apply()
+
     var autoUpdateCheck: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_UPDATE, value).apply()
@@ -81,6 +86,7 @@ class AppSettings(context: Context) {
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_RESTORE_TABS = "restore_tabs"
         const val KEY_AUTO_NEXT = "auto_next_episode"
+        const val KEY_VIDEO_HINTS = "video_options_hints"
         const val KEY_LOW_RAM = "low_ram_mode"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     }

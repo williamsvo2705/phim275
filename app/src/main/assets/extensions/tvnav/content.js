@@ -78,6 +78,96 @@
         });
     })();
 
+    // ── Tùy chọn video (mọi frame): app hỏi / đổi tốc độ, chất lượng của trình phát chính ──
+    // Chỉ frame có video chính trả lời. Chất lượng đổi qua API của trình phát trên trang (JW Player, hls.js),
+    // đọc được nhờ wrappedJSObject (content script của Firefox nhìn thấy đối tượng JS của trang).
+    (function playerControl() {
+        if ( typeof browser === 'undefined' || !browser.runtime || !browser.runtime.onMessage ) { return; }
+        function mainVideo() {
+            let best = null, bestArea = 0;
+            for ( const v of document.querySelectorAll('video') ) {
+                if ( v.readyState === 0 && !v.currentSrc ) { continue; }
+                const a = (v.clientWidth || 1) * (v.clientHeight || 1);
+                if ( a > bestArea ) { best = v; bestArea = a; }
+            }
+            return best;
+        }
+        const page = ( ) => window.wrappedJSObject || window;
+        function jw() {
+            try {
+                const w = page();
+                if ( typeof w.jwplayer !== 'function' ) { return null; }
+                const p = w.jwplayer();
+                return p && typeof p.getQualityLevels === 'function' ? p : null;
+            } catch { return null; }
+        }
+        function hls() {
+            try {
+                const w = page();
+                const isHls = o => o && typeof o === 'object' && o.levels && typeof o.levels.length === 'number' && 'currentLevel' in o;
+                if ( isHls(w.hls) ) { return w.hls; }
+                for ( const k of Object.keys(w) ) {
+                    let o = null;
+                    try { o = w[k]; } catch { continue; }
+                    if ( isHls(o) ) { return o; }
+                    if ( o && typeof o === 'object' && isHls(o.hls) ) { return o.hls; } // vd. ArtPlayer: art.hls
+                }
+            } catch { }
+            return null;
+        }
+        function info(v) {
+            const out = { engine: 'html5', rate: v.playbackRate, levels: [], level: -1, height: v.videoHeight || 0 };
+            const p = jw();
+            if ( p !== null ) {
+                try {
+                    const q = p.getQualityLevels() || [];
+                    for ( let i = 0; i < q.length; i++ ) {
+                        const l = q[i] || {};
+                        out.levels.push(String(l.label || (l.height ? `${l.height}p` : `Mức ${i + 1}`)));
+                    }
+                    out.level = Number(p.getCurrentQuality());
+                    out.engine = 'jwplayer';
+                    return out;
+                } catch { }
+            }
+            const h = hls();
+            if ( h !== null ) {
+                try {
+                    out.levels.push('Tự động');
+                    for ( let i = 0; i < h.levels.length; i++ ) {
+                        const l = h.levels[i] || {};
+                        out.levels.push(l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps`);
+                    }
+                    // Mức vừa chọn chỉ có hiệu lực từ đoạn video kế tiếp → báo mức đang tải (loadLevel).
+                    const lv = Number.isInteger(h.loadLevel) && h.loadLevel >= 0 ? h.loadLevel : Number(h.currentLevel);
+                    out.level = h.autoLevelEnabled ? 0 : lv + 1;
+                    out.engine = 'hls.js';
+                } catch { }
+            }
+            return out;
+        }
+        browser.runtime.onMessage.addListener(msg => {
+            if ( !isObj(msg) || msg.phim275Video !== true ) { return; }
+            const v = mainVideo();
+            if ( v === null ) { return; } // frame khác (có video) trả lời
+            const value = Number(msg.value);
+            if ( msg.cmd === 'rate' && value > 0 && value <= 4 ) {
+                const p = jw();
+                try { if ( p !== null && typeof p.setPlaybackRate === 'function' ) { p.setPlaybackRate(value); } } catch { }
+                v.playbackRate = value;
+            } else if ( msg.cmd === 'level' && Number.isInteger(value) && value >= 0 ) {
+                const p = jw();
+                if ( p !== null ) {
+                    try { p.setCurrentQuality(value); } catch { }
+                } else {
+                    const h = hls();
+                    if ( h !== null ) { try { h.currentLevel = value === 0 ? -1 : value - 1; } catch { } }
+                }
+            }
+            return new Promise(resolve => setTimeout(( ) => resolve(info(v)), msg.cmd === 'info' ? 0 : 300));
+        });
+    })();
+
     // ── Trong iframe (vd. trình phát video): không điều hướng, chỉ chuyển phím lên trang chính ──
     // Sau khi bấm vào trình phát, focus bàn phím nằm trong iframe nên phím không tới trang chính.
     if ( window !== window.top ) {
@@ -539,7 +629,7 @@
             'display:none',
         ].join(';');
         hint = document.createElement('div');
-        hint.textContent = 'OK: phát / dừng  ·  OK × 2: toàn màn hình';
+        hint.textContent = 'OK: phát / dừng  ·  OK × 2: toàn màn hình  ·  Giữ OK: tốc độ, chất lượng';
         hint.style.cssText = [
             'position:absolute', 'right:8px', 'bottom:8px', 'padding:6px 12px', 'border-radius:8px',
             'background:rgba(0,0,0,.78)', 'color:#fff', 'font:600 16px/1.3 system-ui,Roboto,sans-serif',
@@ -676,7 +766,7 @@
             (link && link.title) || current.getAttribute('aria-label') || current.title ||
             (img && img.alt) || longestLine
         ).trim().slice(0, 80);
-        notifyApp({ type: 'context', href: link ? link.href : null, text });
+        notifyApp({ type: 'context', href: link ? link.href : null, text, media: isMediaBlock(current) });
         return true;
     }
 

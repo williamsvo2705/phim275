@@ -76,6 +76,8 @@ import phim275.tv.com.data.LinkStore
 import phim275.tv.com.data.NextEpisodePolicy
 import phim275.tv.com.data.PlaybackCodec
 import phim275.tv.com.data.PlaybackStore
+import phim275.tv.com.data.PlayerOptions
+import phim275.tv.com.data.VideoInfo
 import phim275.tv.com.data.SavedSession
 import phim275.tv.com.data.SavedTab
 import phim275.tv.com.data.SearchEngine
@@ -181,10 +183,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
     }
 
-    private fun onBlockContext(href: String?, text: String) {
+    private fun onBlockContext(href: String?, text: String, media: Boolean) {
         if (!awaitingBlockMenu) return
         awaitingBlockMenu = false
         handler.removeCallbacks(blockMenuFallback)
+        if (media) { // giữ OK trên trình phát → tốc độ, chất lượng
+            showVideoOptions()
+            return
+        }
         if (href == null) {
             showMainMenu()
             return
@@ -243,7 +249,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.contextListener = ::onBlockContext
         TvNavBridge.pseudoFullscreenListener = { on ->
             pseudoFullscreen = on
-            if (on) enterPageMode()
+            if (on) {
+                enterPageMode()
+                hintVideoOptions()
+            }
         }
         TvNavBridge.playbackListener = ::onPlaybackPosition
         TvNavBridge.resumeProvider = ::resumePositionFor
@@ -617,7 +626,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
         override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
             this@MainActivity.fullScreen = fullScreen
-            if (fullScreen) enterPageMode()
+            if (fullScreen) {
+                enterPageMode()
+                hintVideoOptions()
+            }
         }
 
         override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: ContextElement) {
@@ -847,6 +859,9 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                     blockedPopupUrl = null
                     tabs.newTab(popup, settings.desktopModeDefault)
                 }
+            }
+            if (isWebPage && videoPage == PlaybackCodec.key(url!!)) {
+                page += PanelItem("Tùy chọn video", R.drawable.ic_tune, value = "Tốc độ · chất lượng") { showVideoOptions() }
             }
             if (isWebPage) {
                 val marked = bookmarks.contains(url!!)
@@ -1201,6 +1216,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         val url = page ?: currentUrl
         if (!LinkStore.isRecordable(url)) return
         playback.record(url!!, positionSec, durationSec, flush)
+        videoPage = PlaybackCodec.key(url)
         updateNextCard(url, positionSec, durationSec, ended)
     }
 
@@ -1216,6 +1232,72 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         val position = PlaybackCodec.resumePosition(playback.get(url!!), durationSec, startSec, playback.siteResumes(host)) ?: return null
         showToast("▶ Xem tiếp từ ${PlaybackCodec.formatTime(position)} · ⏪ tua lại")
         return position
+    }
+
+    // ───────────────────────────── Tùy chọn video ─────────────────────────────
+
+    /** Trang (URL bỏ #) vừa báo vị trí video — menu chính hiện mục "Tùy chọn video". */
+    private var videoPage: String? = null
+    private var videoInfo: VideoInfo? = null
+
+    /** Bảng tốc độ / chất lượng của video đang xem (extension tvnav hỏi trình phát trong frame có video). */
+    private fun showVideoOptions() {
+        TvNavBridge.video("info") { json ->
+            val info = PlayerOptions.parse(json)
+            if (info == null) {
+                showToast("Không tìm thấy video trên trang này")
+                return@video
+            }
+            videoInfo = info
+            beforePanel()
+            panel.show("Tùy chọn video", engineName(info.engine)) { listOf(PanelSection(null, videoOptionItems())) }
+        }
+    }
+
+    private fun engineName(engine: String) = when (engine) {
+        "jwplayer" -> "Trình phát JW Player"
+        "hls.js" -> "Trình phát HLS"
+        else -> "Trình phát của trang"
+    }
+
+    private fun videoOptionItems(): List<PanelItem> {
+        val info = videoInfo ?: return emptyList()
+        val items = mutableListOf(
+            PanelItem("Tốc độ phát", R.drawable.ic_forward, value = PlayerOptions.rateLabel(info.rate)) {
+                panel.choose(
+                    "Tốc độ phát", null, PlayerOptions.RATES,
+                    { PlayerOptions.nearestRate(videoInfo?.rate ?: 1.0) }, PlayerOptions::rateLabel,
+                ) { rate -> applyVideoOption("rate", rate) }
+            },
+        )
+        items += if (info.canChooseLevel) {
+            PanelItem("Chất lượng", R.drawable.ic_tune, value = info.qualitySummary) {
+                val levels = videoInfo?.levels ?: info.levels
+                panel.choose("Chất lượng", null, PlayerOptions.displayOrder(levels), { videoInfo?.level ?: -1 }, { levels[it] }) { index ->
+                    applyVideoOption("level", index)
+                }
+            }
+        } else {
+            // Luồng chỉ có một độ phân giải, hoặc trình phát không công khai danh sách chất lượng.
+            val note = if (info.levels.size == 1) "chỉ có 1 mức" else "trang không cho chọn"
+            PanelItem("Chất lượng", R.drawable.ic_tune, value = "${info.qualitySummary} · $note", keepOpen = true) {}
+        }
+        return items
+    }
+
+    private fun applyVideoOption(cmd: String, value: Any) {
+        TvNavBridge.video(cmd, value) { json ->
+            PlayerOptions.parse(json)?.let { videoInfo = it }
+            if (panel.isShowing) panel.refresh()
+        }
+    }
+
+    /** Vài lần đầu vào toàn màn hình: nhắc cách mở tùy chọn video. */
+    private fun hintVideoOptions() {
+        val shown = settings.videoOptionsHints
+        if (shown >= VIDEO_HINT_TIMES) return
+        settings.videoOptionsHints = shown + 1
+        showToast(if (isCursorMode()) "Menu: tốc độ, chất lượng video" else "▼ hoặc Menu: tốc độ, chất lượng video")
     }
 
     // ───────────────────────────── Tập tiếp theo ─────────────────────────────
@@ -1574,6 +1656,15 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
         // Xem video toàn màn hình, con trỏ đang ẩn: ◀ ▶ tua 10 giây, OK tạm dừng/phát (▲▼ hiện con trỏ).
         if (isAnyFullscreen()) {
+            // Menu (hoặc ▼ ở chế độ chuyển khối) → tốc độ, chất lượng.
+            if (code == KeyEvent.KEYCODE_MENU) {
+                if (event.action == KeyEvent.ACTION_UP) showVideoOptions()
+                return true
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN && !isCursorMode()) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) showVideoOptions()
+                return true
+            }
             MediaKeys.forFullscreenKey(code, cursorVisible = isCursorShown())?.let { action ->
                 val isSeek = action == MediaKeys.Action.FORWARD || action == MediaKeys.Action.REWIND
                 if (event.action == KeyEvent.ACTION_DOWN && (isSeek || event.repeatCount == 0)) {
@@ -1955,6 +2046,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val SNACKBAR_PER_CHAR_MS = 35L
         private const val SNACKBAR_MAX_MS = 5000L
         private const val MAX_NEXT_EPISODES = 20
+        private const val VIDEO_HINT_TIMES = 5
         private const val NEXT_TICK_MS = 100L
         private const val NEXT_REQUEST_WINDOW_MS = 4000L
     }

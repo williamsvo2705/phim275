@@ -26,8 +26,8 @@ object TvNavBridge {
     /** Trang bật/tắt phóng to video bằng CSS (khi trình phát chặn Fullscreen API). */
     var pseudoFullscreenListener: ((Boolean) -> Unit)? = null
 
-    /** Giữ OK ở chế độ chuyển khối: (liên kết của khối hoặc null, chữ trên khối). */
-    var contextListener: ((String?, String) -> Unit)? = null
+    /** Giữ OK ở chế độ chuyển khối: (liên kết của khối hoặc null, chữ trên khối, khối là trình phát video). */
+    var contextListener: ((String?, String, Boolean) -> Unit)? = null
 
     /** Vị trí video chính đang xem: (URL trang của tab hoặc null, giây hiện tại, độ dài, ghi ngay, đã phát hết). */
     var playbackListener: ((String?, Double, Double, Boolean, Boolean) -> Unit)? = null
@@ -37,6 +37,47 @@ object TvNavBridge {
 
     /** Video vừa bắt đầu phát: (URL trang hoặc null, độ dài, giây lúc bắt đầu) → giây cần tua tới, hoặc null = để yên. */
     var resumeProvider: ((String?, Double, Double) -> Double?)? = null
+
+    private const val TIMEOUT_MS = 3000L
+    private var port: WebExtension.Port? = null
+    private var nextId = 1
+    private val pending = HashMap<Int, (JSONObject?) -> Unit>()
+
+    /**
+     * Tùy chọn video: [cmd] = "info" | "rate" (value = tốc độ) | "level" (value = chỉ số chất lượng).
+     * [callback] (main thread) nhận trạng thái trình phát sau khi đổi, hoặc null nếu trang không có video / chưa sẵn sàng.
+     */
+    fun video(cmd: String, value: Any? = null, callback: (JSONObject?) -> Unit) {
+        val p = port
+        if (p == null) {
+            callback(null)
+            return
+        }
+        val id = nextId++
+        pending[id] = callback
+        main.postDelayed({ pending.remove(id)?.invoke(null) }, TIMEOUT_MS)
+        try {
+            p.postMessage(JSONObject().put("id", id).put("type", "video").put("cmd", cmd).put("value", value ?: JSONObject.NULL))
+        } catch (e: Exception) {
+            Log.w(TAG, "postMessage lỗi", e)
+            pending.remove(id)?.invoke(null)
+        }
+    }
+
+    private val portDelegate = object : WebExtension.PortDelegate {
+        override fun onPortMessage(message: Any, source: WebExtension.Port) {
+            val json = message as? JSONObject ?: return
+            val callback = pending.remove(json.optInt("id", 0)) ?: return
+            callback(if (json.optBoolean("ok")) json.optJSONObject("info") else null)
+        }
+
+        override fun onDisconnect(source: WebExtension.Port) {
+            if (port === source) port = null
+            val waiting = pending.values.toList()
+            pending.clear()
+            waiting.forEach { it(null) }
+        }
+    }
 
     fun install(runtime: GeckoRuntime) {
         runtime.webExtensionController.ensureBuiltIn(EXTENSION_URI, EXTENSION_ID).accept(
@@ -49,6 +90,11 @@ object TvNavBridge {
     }
 
     private val delegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(newPort: WebExtension.Port) {
+            port = newPort
+            newPort.setDelegate(portDelegate)
+        }
+
         override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
             val json = message as? JSONObject ?: return GeckoResult.fromValue(false)
             val page = if (json.isNull("page")) null else json.optString("page").takeIf { it.isNotBlank() }
@@ -80,7 +126,8 @@ object TvNavBridge {
             if (json.optString("type") == "context") {
                 val href = if (json.isNull("href")) null else json.optString("href").takeIf { it.isNotBlank() }
                 val text = json.optString("text")
-                main.post { contextListener?.invoke(href, text) }
+                val media = json.optBoolean("media")
+                main.post { contextListener?.invoke(href, text, media) }
                 return GeckoResult.fromValue(true)
             }
             if (json.optString("type") == "pseudoFullscreen") {
