@@ -77,6 +77,7 @@ import phim275.tv.com.data.NextEpisodePolicy
 import phim275.tv.com.data.PlaybackCodec
 import phim275.tv.com.data.PlaybackStore
 import phim275.tv.com.data.PlayerOptions
+import phim275.tv.com.data.VideoSource
 import phim275.tv.com.data.VideoInfo
 import phim275.tv.com.data.SavedSession
 import phim275.tv.com.data.SavedTab
@@ -611,6 +612,11 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         override fun onPageStop(session: GeckoSession, success: Boolean) {
             if (!tabs.isCurrent(session)) return
             progress.visibility = View.GONE
+            resumeAfterKill?.let { fs ->
+                resumeAfterKill = null
+                // tvnav: F11 = tự phát lại, F12 = tự phát + toàn màn hình (vị trí cũ do "Xem tiếp đúng chỗ" tua tới).
+                if (success) handler.postDelayed({ sendKeyToPage(if (fs) KeyEvent.KEYCODE_F12 else KeyEvent.KEYCODE_F11, 0) }, 600)
+            }
             if (pageStartMs > 0) diagnostics.lastPageLoadMs = SystemClock.uptimeMillis() - pageStartMs
             saveSession() // phòng khi Android đóng app đột ngột vì thiếu RAM
         }
@@ -646,7 +652,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     }
 
     private fun recoverSession(session: GeckoSession) {
-        if (tabs.isCurrent(session)) showToast(getString(R.string.session_crashed))
+        if (tabs.isCurrent(session)) {
+            // Đang xem phim mà trang bị đóng (box thiếu RAM) → tải lại rồi xem tiếp đúng chỗ, tự phát.
+            val watching = SystemClock.uptimeMillis() - lastPlayingMs < RESUME_AFTER_KILL_WINDOW_MS
+            resumeAfterKill = if (watching) isAnyFullscreen() else null
+            fullScreen = false
+            pseudoFullscreen = false
+            showToast(if (watching) "Trang bị đóng vì thiếu bộ nhớ — đang mở lại và xem tiếp…" else getString(R.string.session_crashed))
+        }
         handler.post { tabs.recover(session) }
     }
 
@@ -1217,6 +1230,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         if (!LinkStore.isRecordable(url)) return
         playback.record(url!!, positionSec, durationSec, flush)
         videoPage = PlaybackCodec.key(url)
+        if (!flush) lastPlayingMs = SystemClock.uptimeMillis() // báo định kỳ chỉ khi video đang chạy
         updateNextCard(url, positionSec, durationSec, ended)
     }
 
@@ -1225,6 +1239,18 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         val url = page ?: currentUrl
         if (!LinkStore.isRecordable(url)) return null
         val host = Uri.parse(url).host.orEmpty()
+        // Vừa đổi nguồn phát trong bảng Tùy chọn video: trình phát mới bắt đầu từ 0 → luôn tua về chỗ đang xem
+        // (kể cả trang có tính năng xem tiếp riêng — tính năng đó thường không biết người xem vừa đổi server).
+        if (SystemClock.uptimeMillis() < forceResumeUntilMs) {
+            forceResumeUntilMs = 0
+            val saved = playback.get(url!!)
+            if (saved != null && saved.positionSec >= PlaybackCodec.MIN_RESUME_SEC && startSec < saved.positionSec - 5 &&
+                !PlaybackCodec.isFinished(saved.positionSec, durationSec)
+            ) {
+                showToast("▶ Xem tiếp từ ${PlaybackCodec.formatTime(saved.positionSec)} trên nguồn mới")
+                return saved.positionSec
+            }
+        }
         if (PlaybackCodec.siteResumedItself(startSec)) {
             playback.markSiteResumes(host) // trang tự xem tiếp được → từ nay nhường trang
             return null
@@ -1238,19 +1264,34 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     /** Trang (URL bỏ #) vừa báo vị trí video — menu chính hiện mục "Tùy chọn video". */
     private var videoPage: String? = null
+    private var lastPlayingMs = 0L
+    /** Trang vừa bị đóng giữa phim: null = không; true/false = lúc đó có đang toàn màn hình. */
+    private var resumeAfterKill: Boolean? = null
     private var videoInfo: VideoInfo? = null
+    private var videoSources: List<VideoSource> = emptyList()
+    /** Vừa đổi nguồn phát: lần phát kế tiếp (trước mốc này) luôn tua về chỗ đang xem. */
+    private var forceResumeUntilMs = 0L
 
-    /** Bảng tốc độ / chất lượng của video đang xem (extension tvnav hỏi trình phát trong frame có video). */
+    /**
+     * Bảng tốc độ / chất lượng / nguồn phát của video đang xem: extension tvnav hỏi trình phát trong frame
+     * có video, và trang chính về các nút server / bản dịch.
+     */
     private fun showVideoOptions() {
-        TvNavBridge.video("info") { json ->
-            val info = PlayerOptions.parse(json)
-            if (info == null) {
-                showToast("Không tìm thấy video trên trang này")
-                return@video
+        TvNavBridge.video("info") { infoJson ->
+            TvNavBridge.video("sources") { sourcesJson ->
+                val info = PlayerOptions.parse(infoJson)
+                val sources = PlayerOptions.parseSources(sourcesJson)
+                if (info == null && sources.isEmpty()) {
+                    showToast("Không tìm thấy video trên trang này")
+                    return@video
+                }
+                videoInfo = info
+                videoSources = sources
+                beforePanel()
+                panel.show("Tùy chọn video", info?.let { engineName(it.engine) } ?: "Trình phát chưa chạy") {
+                    listOf(PanelSection(null, videoOptionItems()))
+                }
             }
-            videoInfo = info
-            beforePanel()
-            panel.show("Tùy chọn video", engineName(info.engine)) { listOf(PanelSection(null, videoOptionItems())) }
         }
     }
 
@@ -1261,8 +1302,26 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     }
 
     private fun videoOptionItems(): List<PanelItem> {
-        val info = videoInfo ?: return emptyList()
-        val items = mutableListOf(
+        val items = mutableListOf<PanelItem>()
+        if (videoSources.isNotEmpty()) {
+            // Server / bản dịch của trang: đổi xong trình phát dựng lại → đóng bảng để xem.
+            items += PanelItem("Nguồn phát / bản dịch", R.drawable.ic_open, value = PlayerOptions.sourcesSummary(videoSources)) {
+                val sources = videoSources
+                panel.choose(
+                    "Nguồn phát / bản dịch", "Đổi server khi phim giật, tải chậm",
+                    sources.indices.toList(), { sources.indexOfFirst { it.active } }, { sources[it].label },
+                ) { index ->
+                    forceResumeUntilMs = SystemClock.uptimeMillis() + FORCE_RESUME_WINDOW_MS
+                    TvNavBridge.video("source", index) { json ->
+                        PlayerOptions.parseSources(json).takeIf { it.isNotEmpty() }?.let { videoSources = it }
+                    }
+                    panel.hide()
+                    showToast("Đang chuyển sang ${sources[index].label}…")
+                }
+            }
+        }
+        val info = videoInfo ?: return items
+        items += listOf(
             PanelItem("Tốc độ phát", R.drawable.ic_forward, value = PlayerOptions.rateLabel(info.rate)) {
                 panel.choose(
                     "Tốc độ phát", null, PlayerOptions.RATES,
@@ -2047,6 +2106,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val SNACKBAR_MAX_MS = 5000L
         private const val MAX_NEXT_EPISODES = 20
         private const val VIDEO_HINT_TIMES = 5
+        private const val RESUME_AFTER_KILL_WINDOW_MS = 15_000L
+        private const val FORCE_RESUME_WINDOW_MS = 30_000L
         private const val NEXT_TICK_MS = 100L
         private const val NEXT_REQUEST_WINDOW_MS = 4000L
     }

@@ -46,6 +46,25 @@ class PlayerOptionsTest {
         assertEquals("—", VideoInfo("html5", 1.0, emptyList(), -1).qualitySummary)
     }
 
+    @Test fun `đọc nút nguồn phát trên trang`() {
+        val json = JSONObject().put(
+            "sources",
+            JSONArray()
+                .put(JSONObject().put("l", " Thuyết  Minh ").put("a", true))
+                .put(JSONObject().put("l", "Vietsub").put("a", false))
+                .put(JSONObject().put("l", "1080").put("a", true))
+                .put(JSONObject().put("l", "   ")),
+        )
+        val sources = PlayerOptions.parseSources(json)
+        assertEquals(listOf("Thuyết Minh", "Vietsub", "1080"), sources.map { it.label })
+        assertEquals("Thuyết Minh · 1080", PlayerOptions.sourcesSummary(sources))
+        assertEquals("Chọn", PlayerOptions.sourcesSummary(sources.map { it.copy(active = false) }))
+        // Chỉ một nút → không có gì để chọn.
+        val single = JSONObject().put("sources", JSONArray().put(JSONObject().put("l", "Server 1")))
+        assertEquals(emptyList<VideoSource>(), PlayerOptions.parseSources(single))
+        assertEquals(emptyList<VideoSource>(), PlayerOptions.parseSources(null))
+    }
+
     @Test fun `trang không cho chọn chất lượng hoặc dữ liệu hỏng`() {
         val html5 = PlayerOptions.parse(JSONObject().put("engine", "html5").put("rate", 1.5))!!
         assertEquals(emptyList<String>(), html5.levels)

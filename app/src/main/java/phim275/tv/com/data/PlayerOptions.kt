@@ -32,6 +32,9 @@ data class VideoInfo(
     }
 }
 
+/** Nút chọn server / bản dịch trên trang ("Server 1", "Vietsub", "1080"…). */
+data class VideoSource(val label: String, val active: Boolean)
+
 /** Tùy chọn video: tốc độ, chất lượng (thuần, có unit test). */
 object PlayerOptions {
     val RATES = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
@@ -61,6 +64,21 @@ object PlayerOptions {
         val number = { s: String -> Regex("""(\d{3,4})""").find(s)?.groupValues?.get(1)?.toIntOrNull() }
         return levels.indices.sortedWith(compareBy({ number(levels[it]) != null }, { -(number(levels[it]) ?: 0) }, { it }))
     }
+
+    /** { sources: [{ l, a }] } → danh sách nguồn; ít hơn 2 nút thì không có gì để chọn. */
+    fun parseSources(json: JSONObject?): List<VideoSource> {
+        val arr = json?.optJSONArray("sources") ?: return emptyList()
+        val out = (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val label = o.optString("l").replace(Regex("\\s+"), " ").trim()
+            if (label.isEmpty()) null else VideoSource(label, o.optBoolean("a"))
+        }
+        return if (out.size >= 2) out else emptyList()
+    }
+
+    /** Giá trị hiển thị: các nút đang chọn ("Thuyết Minh · 1080"), không rõ thì "Chọn". */
+    fun sourcesSummary(sources: List<VideoSource>): String =
+        sources.filter { it.active }.joinToString(" · ") { it.label }.ifEmpty { "Chọn" }
 
     fun parse(json: JSONObject?): VideoInfo? {
         if (json == null) return null

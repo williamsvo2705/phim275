@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.13.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
+> Trạng thái: **0.14.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
 
 ## Tính năng
 
@@ -20,7 +20,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Remote | Con trỏ ảo tăng tốc (đổi nhanh ở đầu ☰ Menu) · giữ OK = menu chuột phải (mở link tab mới, bookmark link) · chế độ phím Tab · cuộn đúng khung dưới con trỏ · Back/Giữ Back/Menu · CH+/CH− · tìm kiếm giọng nói |
 | Xem tiếp đúng chỗ | Nhớ vị trí video đang xem (cả trong iframe trình phát) theo từng trang → mở lại tự tua tới chỗ cũ, báo "Xem tiếp từ 12:34" · trang chủ "Xem tiếp" có thanh tiến độ + thời gian còn lại · bỏ qua quảng cáo chèn đầu (< 2 phút), xem gần hết thì phát từ đầu · trang có sẵn tính năng xem tiếp riêng thì app tự nhường |
 | Tập tiếp theo | Trang xem phim có danh sách tập (hoặc nút "Tập tiếp") → cuối phim hiện thẻ "Tập tiếp theo" (cả khi đang toàn màn hình): OK = xem ngay, Back = ẩn · hết phim tự chuyển sau 10 giây (tắt được trong Cài đặt → Xem phim) · chạy với cả trang SPA (Cobephim/RoPhim) · tập mới tự phát, đang toàn màn hình thì tập mới cũng toàn màn hình |
-| Tùy chọn video | Đang xem toàn màn hình bấm ▼ (hoặc Menu), giữ OK trên khối trình phát, hoặc menu chính → "Tùy chọn video": tốc độ 0,5×–2× (mọi trang) · chất lượng Tự động/1080p/720p… khi trình phát có nhiều mức (JW Player, hls.js) · bảng hiện độ phân giải đang phát |
+| Tùy chọn video | Đang xem toàn màn hình bấm ▼ (hoặc Menu), giữ OK trên khối trình phát, hoặc menu chính → "Tùy chọn video": tốc độ 0,5×–2× (mọi trang) · chất lượng Tự động/1080p/720p… khi trình phát có nhiều mức (JW Player, hls.js) · bảng hiện độ phân giải đang phát · **nguồn phát / bản dịch**: các nút server, Vietsub/Thuyết minh, 1080/4K của trang — đổi xong tự phát lại đúng chỗ đang xem |
 | Xem video | Khối video: OK = phát/dừng, **OK × 2 = toàn màn hình** (viền đỏ tự ẩn), Back / OK × 2 để thoát · giữ màn hình sáng khi đang phát · Phím media của remote (Play/Pause, tua ±10s) điều khiển video kể cả trong iframe · toàn màn hình: ◀ ▶ tua, OK dừng/phát, ▲▼ hiện con trỏ · cỡ chữ 100–175% |
 | Nhập chữ | Ép hiện bàn phím TV (LeanKey, Gboard…) · ô nhập dự phòng tự bật khi bàn phím không hiện |
 | Tiện ích | Bookmark (hiện trên trang chủ), lịch sử, chọn công cụ tìm kiếm (Google, Cốc Cốc, Bing, DuckDuckGo, YouTube), Desktop/Mobile, xóa dữ liệu |
@@ -28,7 +28,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Tự cập nhật | Kiểm tra `latest.json` mỗi ngày → tải, kiểm SHA-256, cài bằng PackageInstaller |
 | Khôi phục | Mở lại các tab lần trước khi khởi động (sau cập nhật / khi Android đóng app vì thiếu RAM) |
 | Box 1GB (chế độ RAM thấp) | Tự bật khi máy < 1,5GB RAM (hoặc bật tay): bộ lọc gọn 9 danh sách, bỏ lọc ẩn phần tử chung, uBO + GPU chung process chính, cache ảnh 48MB, tối đa 3 tab · đo trên emulator 1GB: 505MB → 326MB · xem phim lâu: giới hạn bộ đệm video MSE (40MB, máy thường 80MB) nên RAM không tăng dần — process trang sau 5 phút 281MB → 209MB |
-| RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, giải phóng tab nền khi thiếu RAM, tự khôi phục tab bị giết |
+| RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, giải phóng tab nền khi thiếu RAM, tự khôi phục tab bị giết · đang xem phim mà trang bị Android đóng vì thiếu RAM → tự mở lại, tua về chỗ cũ, phát tiếp (giữ toàn màn hình) |
 
 Đo trên emulator Android TV 2GB RAM, bản release, trang 24h.com.vn: **~630MB** tổng RAM của app ·
 adblock-tester.com: **100/100**.
