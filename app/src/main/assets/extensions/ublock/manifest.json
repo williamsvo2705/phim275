@@ -128,7 +128,7 @@
     "geckoViewAddons"
   ],
   "short_name": "uBlock₀",
-  "version": "1.75.4",
+  "version": "1.75.401",
   "web_accessible_resources": [
     "/web_accessible_resources/*"
   ]

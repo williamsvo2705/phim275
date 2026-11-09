@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.14.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
+> Trạng thái: **0.14.1** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
 
 ## Tính năng
 

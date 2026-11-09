@@ -20,6 +20,7 @@
 *******************************************************************************/
 
 import µb from './background.js';
+import io from './assets.js';
 
 const NATIVE_APP = 'phim275';
 let port = null;
@@ -103,7 +104,10 @@ async function handle(msg) {
     case 'setLowMemoryLists':
         return { changed: await setLowMemoryLists(msg.enabled === true), lists: µb.selectedFilterLists.length };
     case 'updateFilters':
-        µb.scheduleAssetUpdater({ now: true, fetchDelay: 100 });
+        // uBO chỉ tải lại danh sách đã hết hạn → đánh dấu bộ lọc Phim275 (đổi thường xuyên) là cũ
+        // để "Cập nhật bộ lọc ngay" luôn lấy bản mới; các danh sách lớn khác tự cập nhật theo hạn.
+        await io.purge(/^phim275-filters$/);
+        µb.scheduleAssetUpdater({ now: true, fetchDelay: 100, auto: true });
         return { ok: true };
     case 'media': {
         const tabId = await activeTabId();

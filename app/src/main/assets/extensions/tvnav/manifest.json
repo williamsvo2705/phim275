@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Phim275 TV Navigation",
   "description": "Điều hướng mọi trang web bằng phím mũi tên của remote (chuyển khối kiểu Android TV).",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "browser_specific_settings": {
     "gecko": { "id": "tvnav@phim275.tv" }
   },
