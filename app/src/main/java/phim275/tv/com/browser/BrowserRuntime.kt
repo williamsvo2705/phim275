@@ -67,6 +67,14 @@ object BrowserRuntime {
         "browser.cache.memory.capacity" to "32768",
         // Bộ nhớ đệm ảnh đã giải mã: mặc định tới ~¼ RAM (≈400MB trên máy 1,6GB) → giới hạn 128MB.
         "image.mem.surfacecache.max_size_kb" to "131072",
+        // Bộ đệm video MSE (HLS/DASH — hầu hết trang phim): mặc định giữ tới 150MB video + 20MB audio
+        // (cả đoạn đã xem) trong process trang → xem lâu là RAM tăng dần. 80MB vẫn dư cho 1080p.
+        "media.mediasource.eviction_threshold.video" to (80L * 1024 * 1024).toString(),
+        "media.mediasource.eviction_threshold.audio" to (12L * 1024 * 1024).toString(),
+        // Không đoán trước / tải trước các trang có thể mở (tốn mạng, CPU, RAM trên máy yếu).
+        "network.predictor.enabled" to "false",
+        "network.prefetch-next" to "false",
+        "network.http.speculative-parallel-limit" to "0",
     )
 
     /** Chế độ RAM thấp (TV box 1GB): đè lên LOW_MEMORY_PREFS. */
@@ -75,6 +83,8 @@ object BrowserRuntime {
         "browser.cache.memory.capacity" to "8192",           // cache RAM: 8MB
         "browser.sessionhistory.max_entries" to "15",        // lịch sử Back mỗi tab (mặc định 50)
         "media.memory_cache_max_size" to "16384",            // đệm video trong RAM: 16MB (phần còn lại ra đĩa)
+        "media.mediasource.eviction_threshold.video" to (40L * 1024 * 1024).toString(), // MSE: ~1 phút 1080p
+        "media.mediasource.eviction_threshold.audio" to (8L * 1024 * 1024).toString(),
         "javascript.options.mem.gc_incremental_slice_ms" to "10",
         "image.mem.decode_bytes_at_a_time" to "65536",       // giải mã ảnh từng phần nhỏ
         "layout.css.prefers-reduced-motion" to "1",          // bớt hiệu ứng chuyển động

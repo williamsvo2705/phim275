@@ -139,8 +139,17 @@
                 width: `${r.width + 8}px`, height: `${r.height + 8}px`,
             });
         }
+        // Video đang chạy: thanh tiến độ đổi DOM liên tục, mà hộp thoại chỉ hiện khi chưa phát / tạm dừng
+        // → không quét (mỗi lần quét buộc trình duyệt tính lại bố cục, tốn CPU trên box yếu).
+        const playing = ( ) => {
+            for ( const v of document.querySelectorAll('video') ) {
+                if ( !v.paused && !v.ended ) { return true; }
+            }
+            return false;
+        };
         function refresh() {
             pending = null;
+            if ( dlg === null && playing() ) { return; }
             const buttons = dialogButtons();
             const had = dlg !== null;
             if ( buttons.length === 0 ) {
@@ -164,6 +173,8 @@
             childList: true, subtree: true, attributes: true, attributeFilter: [ 'class', 'style', 'hidden' ],
         });
         schedule();
+        addEventListener('pause', schedule, true);
+        addEventListener('ended', schedule, true);
         addEventListener('message', ev => {
             const data = ev.data;
             if ( !isObj(data) || typeof data[DIALOG_KEY_TAG] !== 'string' ) { return; }
@@ -227,15 +238,24 @@
         childList: true, subtree: true, attributes: true, attributeFilter: [ 'class', 'style', 'hidden', 'href' ],
     });
 
+    /** Video trên trang này đang chạy (thanh tiến độ đổi DOM liên tục → bớt việc đo bố cục). */
+    function videoPlaying() {
+        for ( const v of document.querySelectorAll('video') ) {
+            if ( !v.paused && !v.ended ) { return true; }
+        }
+        return false;
+    }
+
     function onDomSettled() {
         settleTimer = null;
-        if ( current !== null && !isAlive(current) ) {
+        const busy = videoPlaying();
+        if ( current !== null && (busy ? !current.isConnected : !isAlive(current)) ) {
             current = null;
             drawOverlay();
         }
         // Hộp thoại hiện lên giữa trình phát đang chọn (vd. "Tiếp tục xem / Xem lại từ đầu") → chọn nút của nó.
         const now = Date.now();
-        if ( current !== null && isMediaBlock(current) && !isFullscreen() && now - lastDialogCheck >= DIALOG_CHECK_MS ) {
+        if ( !busy && current !== null && isMediaBlock(current) && !isFullscreen() && now - lastDialogCheck >= DIALOG_CHECK_MS ) {
             lastDialogCheck = now;
             const btn = dialogOver(current);
             if ( btn !== null ) { select(btn); }
@@ -771,8 +791,10 @@
         return hit ? { el: hit.el, label: `Tập ${n + 1}` } : null;
     }
 
-    function urlEpisode() {
-        let path = location.pathname + location.search;
+    /** Số tập trong địa chỉ (…/tap-5, ?ep=5), hoặc null. */
+    function urlEpisode(href = location.href) {
+        let path;
+        try { const u = new URL(href, location.href); path = u.pathname + u.search; } catch { return null; }
         try { path = decodeURIComponent(path); } catch { }
         let n = null;
         for ( const m of path.matchAll(URL_EP) ) { n = parseInt(m[1], 10); }
@@ -797,7 +819,8 @@
             if ( !NEXT_TEXT.test(text) && !NEXT_ATTR.test(`${classOf(el)} ${el.id}`) ) { continue; }
             if ( el.tagName === 'A' && (!sameSite(el) || pageKey(el.href) === here) ) { continue; }
             const m = /\d{1,4}/.exec(text);
-            return { el, label: m !== null ? `Tập ${parseInt(m[0], 10)}` : 'Tập tiếp theo' };
+            const n = m !== null ? parseInt(m[0], 10) : (el.tagName === 'A' ? urlEpisode(el.href) : null);
+            return { el, label: n !== null ? `Tập ${n}` : 'Tập tiếp theo' };
         }
         // 3) Số tập trong địa chỉ trang (…/tap-5, ?ep=5).
         const n = urlEpisode();
