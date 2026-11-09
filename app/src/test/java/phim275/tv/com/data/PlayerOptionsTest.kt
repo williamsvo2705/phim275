@@ -8,6 +8,19 @@ import org.junit.Test
 
 class PlayerOptionsTest {
 
+    @Test fun `tua nhanh dần khi giữ phím`() {
+        assertEquals(10, SeekPolicy.step(0))
+        // Giữ 1 giây (~20 lần lặp): 10 + 19×5 = 105 giây; giữ 3 giây (~60 lần): thêm 40×15 = 705 giây.
+        assertEquals(105, (0 until 20).sumOf { SeekPolicy.step(it) })
+        assertEquals(705, (0 until 60).sumOf { SeekPolicy.step(it) })
+        assertEquals(30, SeekPolicy.step(200))
+        assertEquals("+1:20", SeekPolicy.deltaLabel(80))
+        assertEquals("−0:30", SeekPolicy.deltaLabel(-30))
+        assertEquals("12:40 / 45:12", SeekPolicy.positionLabel(760.0, 2712.0))
+        assertEquals("1:02:03 / 1:30:00", SeekPolicy.positionLabel(3723.0, 5400.0))
+        assertEquals("0:05", SeekPolicy.positionLabel(5.0, 0.0))
+    }
+
     @Test fun `nhãn tốc độ`() {
         assertEquals("Bình thường", PlayerOptions.rateLabel(1.0))
         assertEquals("2×", PlayerOptions.rateLabel(2.0))
@@ -16,6 +29,13 @@ class PlayerOptionsTest {
         assertEquals("0,75×", PlayerOptions.rateLabel(0.75))
         assertEquals(1.25, PlayerOptions.nearestRate(1.2600001), 0.0)
         assertEquals(1.0, PlayerOptions.nearestRate(1.0000001), 0.0)
+    }
+
+    @Test fun `đọc vị trí phát`() {
+        val info = PlayerOptions.parse(JSONObject().put("rate", 1.0).put("time", 760.5).put("duration", 2712.0))!!
+        assertEquals(760.5, info.time, 0.0)
+        assertEquals(2712.0, info.duration, 0.0)
+        assertEquals(0.0, PlayerOptions.parse(JSONObject().put("rate", 1.0).put("duration", -5.0))!!.duration, 0.0)
     }
 
     @Test fun `đọc trạng thái JW Player`() {

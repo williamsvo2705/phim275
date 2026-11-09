@@ -117,7 +117,8 @@
             return null;
         }
         function info(v) {
-            const out = { engine: 'html5', rate: v.playbackRate, levels: [], level: -1, height: v.videoHeight || 0 };
+            const out = { engine: 'html5', rate: v.playbackRate, levels: [], level: -1, height: v.videoHeight || 0,
+                time: v.currentTime, duration: Number.isFinite(v.duration) ? v.duration : 0 };
             const p = jw();
             if ( p !== null ) {
                 try {
@@ -153,6 +154,13 @@
             const v = mainVideo();
             if ( v === null ) { return; } // frame khác (có video) trả lời
             const value = Number(msg.value);
+            // Tua (giữ ◀▶ cộng dồn rồi tua một lần, phím số nhảy tới %): chỉ cần vị trí, không dò trình phát.
+            if ( (msg.cmd === 'seekBy' || msg.cmd === 'seekTo') && Number.isFinite(value) ) {
+                const d = Number.isFinite(v.duration) ? v.duration : 0;
+                const target = msg.cmd === 'seekBy' ? v.currentTime + value : d * value;
+                v.currentTime = Math.max(0, d > 0 ? Math.min(d - 1, target) : target);
+                return Promise.resolve({ engine: 'html5', rate: v.playbackRate, time: v.currentTime, duration: d });
+            }
             if ( msg.cmd === 'rate' && value > 0 && value <= 4 ) {
                 const p = jw();
                 try { if ( p !== null && typeof p.setPlaybackRate === 'function' ) { p.setPlaybackRate(value); } } catch { }

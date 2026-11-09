@@ -13,6 +13,9 @@ data class VideoInfo(
     val level: Int,
     /** Chiều cao khung hình thật đang phát (px), 0 = chưa biết. */
     val height: Int = 0,
+    /** Vị trí và độ dài (giây); 0 = chưa biết / phát trực tiếp. */
+    val time: Double = 0.0,
+    val duration: Double = 0.0,
 ) {
     val currentLevelLabel: String? get() = levels.getOrNull(level)
 
@@ -34,6 +37,29 @@ data class VideoInfo(
 
 /** Nút chọn server / bản dịch trên trang ("Server 1", "Vietsub", "1080"…). */
 data class VideoSource(val label: String, val active: Boolean)
+
+/** Tua bằng remote: giữ ◀ ▶ thì tua nhanh dần, cộng dồn rồi tua một lần khi buông phím (thuần, có unit test). */
+object SeekPolicy {
+    /** Số giây cộng thêm cho mỗi lần phím được gửi: lần bấm đầu 10 giây, giữ phím (lặp ~20 lần/giây) nhanh dần. */
+    fun step(repeatCount: Int): Int = when {
+        repeatCount <= 0 -> 10
+        repeatCount < 20 -> 5
+        repeatCount < 60 -> 15
+        else -> 30
+    }
+
+    /** "+1:20", "−0:30" (dấu trừ thật để dễ đọc trên TV). */
+    fun deltaLabel(deltaSec: Int): String {
+        val sign = if (deltaSec < 0) "−" else "+"
+        val a = kotlin.math.abs(deltaSec)
+        return "$sign${a / 60}:%02d".format(a % 60)
+    }
+
+    /** "12:40 / 45:12"; chưa biết độ dài thì chỉ vị trí. */
+    fun positionLabel(timeSec: Double, durationSec: Double): String =
+        if (durationSec > 0) "${PlaybackCodec.formatTime(timeSec)} / ${PlaybackCodec.formatTime(durationSec)}"
+        else PlaybackCodec.formatTime(timeSec)
+}
 
 /** Tùy chọn video: tốc độ, chất lượng (thuần, có unit test). */
 object PlayerOptions {
@@ -87,6 +113,10 @@ object PlayerOptions {
         val arr = json.optJSONArray("levels")
         val levels = if (arr == null) emptyList() else (0 until arr.length()).map { levelLabel(arr.optString(it)) }
         val level = json.optInt("level", -1).takeIf { it in levels.indices } ?: -1
-        return VideoInfo(json.optString("engine", "html5"), rate, levels, level, json.optInt("height", 0).coerceAtLeast(0))
+        return VideoInfo(
+            json.optString("engine", "html5"), rate, levels, level, json.optInt("height", 0).coerceAtLeast(0),
+            json.optDouble("time", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+            json.optDouble("duration", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+        )
     }
 }

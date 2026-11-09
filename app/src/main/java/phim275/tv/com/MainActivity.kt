@@ -77,6 +77,7 @@ import phim275.tv.com.data.NextEpisodePolicy
 import phim275.tv.com.data.PlaybackCodec
 import phim275.tv.com.data.PlaybackStore
 import phim275.tv.com.data.PlayerOptions
+import phim275.tv.com.data.SeekPolicy
 import phim275.tv.com.data.VideoSource
 import phim275.tv.com.data.VideoInfo
 import phim275.tv.com.data.SavedSession
@@ -341,6 +342,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.playbackListener = null
         TvNavBridge.resumeProvider = null
         TvNavBridge.nextEpisodeListener = null
+        handler.removeCallbacks(flushSeek)
         handler.removeCallbacks(nextCountdownTick)
         handler.removeCallbacksAndMessages(null)
         cursor.release()
@@ -1626,6 +1628,44 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
     }
 
+    // ── Tua: cộng dồn khi giữ phím, tua một lần khi buông (đỡ chạy script trong mọi frame ~20 lần/giây) ──
+    private var seekAccumSec = 0
+    private val flushSeek = Runnable {
+        val delta = seekAccumSec
+        seekAccumSec = 0
+        if (delta != 0) applySeek(delta)
+    }
+
+    private fun accumulateSeek(forward: Boolean, repeatCount: Int) {
+        val step = SeekPolicy.step(repeatCount)
+        seekAccumSec += if (forward) step else -step
+        if (repeatCount > 0) showToast((if (seekAccumSec >= 0) "⏩ " else "⏪ ") + SeekPolicy.deltaLabel(seekAccumSec))
+        handler.removeCallbacks(flushSeek)
+        handler.postDelayed(flushSeek, SEEK_FLUSH_MS)
+    }
+
+    private fun applySeek(deltaSec: Int) {
+        val icon = if (deltaSec >= 0) "⏩ " else "⏪ "
+        TvNavBridge.video("seekBy", deltaSec) { json ->
+            val info = PlayerOptions.parse(json)
+            if (info != null) {
+                showToast(icon + SeekPolicy.positionLabel(info.time, info.duration))
+                return@video
+            }
+            // Không tìm thấy video qua tvnav → cách cũ qua uBO (mọi frame).
+            UblockBridge.media(if (deltaSec >= 0) MediaKeys.Action.FORWARD else MediaKeys.Action.REWIND, kotlin.math.abs(deltaSec)) { ok ->
+                if (ok) showToast(icon + SeekPolicy.deltaLabel(deltaSec))
+            }
+        }
+    }
+
+    private fun seekToPercent(percent: Int) {
+        TvNavBridge.video("seekTo", percent / 100.0) { json ->
+            val info = PlayerOptions.parse(json)
+            showToast(if (info != null) "⏩ $percent% · ${SeekPolicy.positionLabel(info.time, info.duration)}" else "Không tua được video trên trang này")
+        }
+    }
+
     private fun controlMedia(action: MediaKeys.Action) {
         UblockBridge.media(action) { ok ->
             if (!ok) {
@@ -1710,7 +1750,13 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
         // Phím media của remote (Play/Pause, tua) → điều khiển video trên trang.
         MediaKeys.forMediaKey(code)?.let { action ->
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) controlMedia(action)
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (action) {
+                    MediaKeys.Action.FORWARD -> accumulateSeek(true, event.repeatCount)
+                    MediaKeys.Action.REWIND -> accumulateSeek(false, event.repeatCount)
+                    else -> if (event.repeatCount == 0) controlMedia(action)
+                }
+            }
             return true
         }
         // Xem video toàn màn hình, con trỏ đang ẩn: ◀ ▶ tua 10 giây, OK tạm dừng/phát (▲▼ hiện con trỏ).
@@ -1724,10 +1770,20 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) showVideoOptions()
                 return true
             }
+            // Phím số: nhảy tới 0%–90% phim (như YouTube).
+            if (code in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) seekToPercent((code - KeyEvent.KEYCODE_0) * 10)
+                return true
+            }
             MediaKeys.forFullscreenKey(code, cursorVisible = isCursorShown())?.let { action ->
-                val isSeek = action == MediaKeys.Action.FORWARD || action == MediaKeys.Action.REWIND
-                if (event.action == KeyEvent.ACTION_DOWN && (isSeek || event.repeatCount == 0)) {
-                    if (action == MediaKeys.Action.TOGGLE) handleFullscreenOk() else controlMedia(action)
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when (action) {
+                        MediaKeys.Action.FORWARD -> accumulateSeek(true, event.repeatCount)
+                        MediaKeys.Action.REWIND -> accumulateSeek(false, event.repeatCount)
+                        else -> if (event.repeatCount == 0) {
+                            if (action == MediaKeys.Action.TOGGLE) handleFullscreenOk() else controlMedia(action)
+                        }
+                    }
                 }
                 return true
             }
@@ -2106,6 +2162,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val SNACKBAR_MAX_MS = 5000L
         private const val MAX_NEXT_EPISODES = 20
         private const val VIDEO_HINT_TIMES = 5
+        private const val SEEK_FLUSH_MS = 300L
         private const val RESUME_AFTER_KILL_WINDOW_MS = 15_000L
         private const val FORCE_RESUME_WINDOW_MS = 30_000L
         private const val NEXT_TICK_MS = 100L
