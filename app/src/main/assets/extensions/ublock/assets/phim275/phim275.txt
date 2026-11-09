@@ -3,7 +3,7 @@
 ! Homepage: https://github.com/williamsvo2705/phim275
 ! Expires: 1 day
 ! License: GPL-3.0
-! Last modified: 2026-11-08
+! Last modified: 2026-11-09
 !
 ! Cú pháp: https://github.com/gorhill/uBlock/wiki/Static-filter-syntax
 ! Báo trang lỗi: https://github.com/williamsvo2705/phim275/issues
@@ -22,6 +22,22 @@
 ! (data-clocid, đổi tên miền liên tục) và banner GIF → chặn tận gốc, trang không còn gì để chèn.
 ||darkbytes.xyz/api/v1/banners
 /api/v1/banners$xhr,domain=cobephim.my|rophim.me|rophim.net|rophim.com|rophimm.net
+
+! AnimeVietsub (animevietsub.* → animevsub.*, đổi tên miền liên tục): banner cờ bạc lưu ngay trên
+! trang (hi88/xx8/ad88/q88/u888.webp) ở đầu trang, dải dính đáy màn hình và popup giữa màn hình.
+! Liên kết đều đi qua trang rút gọn → chặn cả trang rút gọn lẫn khung chứa.
+||shortlink.linkroyal.workers.dev^
+||th3plus.pages.dev^
+##a[href*="shortlink.linkroyal.workers.dev"]
+##a[href*="th3plus.pages.dev"]
+animevietsub.*,animevsub.*##.ads-banner
+animevietsub.*,animevsub.*##a.no-ads-under
+animevietsub.*,animevsub.*##body > div.no-ads-under
+/^https:\/\/animev(?:ietsu|su)b\.[a-z]+\/[a-z]*\d{2,3}[a-z0-9-]*\.(?:webp|gif|png|jpe?g)$/$image,1p
+
+! YanHH3D: script popunder của mạng quảng cáo (đổi tên miền theo đợt).
+||warkedmalie.com^
+||astronautlividlyreformer.com^
 
 ! ───────────── Vượt anti-adblock ─────────────
 ! (scriptlet theo từng trang, ví dụ:)
