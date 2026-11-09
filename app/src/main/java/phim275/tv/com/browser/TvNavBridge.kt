@@ -29,8 +29,11 @@ object TvNavBridge {
     /** Giữ OK ở chế độ chuyển khối: (liên kết của khối hoặc null, chữ trên khối). */
     var contextListener: ((String?, String) -> Unit)? = null
 
-    /** Vị trí video chính đang xem: (URL trang của tab hoặc null, giây hiện tại, độ dài, ghi ngay). */
-    var playbackListener: ((String?, Double, Double, Boolean) -> Unit)? = null
+    /** Vị trí video chính đang xem: (URL trang của tab hoặc null, giây hiện tại, độ dài, ghi ngay, đã phát hết). */
+    var playbackListener: ((String?, Double, Double, Boolean, Boolean) -> Unit)? = null
+
+    /** Trang xem phim báo tập kế tiếp: (URL trang hoặc null, tên tập — null = không có tập sau). */
+    var nextEpisodeListener: ((String?, String?) -> Unit)? = null
 
     /** Video vừa bắt đầu phát: (URL trang hoặc null, độ dài, giây lúc bắt đầu) → giây cần tua tới, hoặc null = để yên. */
     var resumeProvider: ((String?, Double, Double) -> Double?)? = null
@@ -53,9 +56,10 @@ object TvNavBridge {
                 val t = json.optDouble("t", Double.NaN)
                 val d = json.optDouble("d", Double.NaN)
                 val flush = json.optBoolean("flush")
+                val ended = json.optBoolean("ended")
                 if (t.isNaN() || d.isNaN()) return GeckoResult.fromValue(false)
-                if (flush) Log.i(TAG, "Vị trí video %.0f/%.0f giây (%s)".format(t, d, page ?: "tab hiện tại"))
-                main.post { playbackListener?.invoke(page, t, d, flush) }
+                if (flush) Log.i(TAG, "Vị trí video %.0f/%.0f giây%s (%s)".format(t, d, if (ended) ", hết phim" else "", page ?: "tab hiện tại"))
+                main.post { playbackListener?.invoke(page, t, d, flush, ended) }
                 return GeckoResult.fromValue(true)
             }
             if (json.optString("type") == "mediaResume") {
@@ -66,6 +70,12 @@ object TvNavBridge {
                 val result = GeckoResult<Any>()
                 main.post { result.complete(resumeProvider?.invoke(page, d, start) ?: 0) }
                 return result
+            }
+            if (json.optString("type") == "nextEp") {
+                val label = if (json.isNull("label")) null else json.optString("label")
+                Log.i(TAG, "Tập tiếp theo: %s (%s)".format(label ?: "không có", page ?: "tab hiện tại"))
+                main.post { nextEpisodeListener?.invoke(page, label) }
+                return GeckoResult.fromValue(true)
             }
             if (json.optString("type") == "context") {
                 val href = if (json.isNull("href")) null else json.optString("href").takeIf { it.isNotBlank() }

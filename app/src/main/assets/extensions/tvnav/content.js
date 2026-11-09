@@ -8,6 +8,7 @@
  * - ◀ ▲ ▶ ▼: chọn phần tử bấm được gần nhất theo hướng (liên kết, nút, ô phim…), viền đỏ đánh dấu.
  *   Không còn phần tử theo hướng đó (hoặc quá xa) → cuộn trang.
  * - Enter (OK): app chạm thật vào giữa phần tử (bấm được cả iframe trình phát video).
+ * - F10 (app gửi khi bấm OK trên thẻ "Tập tiếp theo"): mở tập kế tiếp của trang xem phim.
  *   Không có kênh tới app (vd. trang chủ nội bộ) → element.click().
  */
 (function () {
@@ -15,7 +16,7 @@
     if ( window.__phim275TvNav ) { return; }
     window.__phim275TvNav = true;
 
-    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F9' ]);
+    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F9', 'F10' ]);
     const FORWARD_TAG = 'phim275-tvnav-key';
     // Hộp thoại bên trong iframe trình phát ("Tiếp tục xem / Xem lại từ đầu"…): iframe báo trạng thái,
     // trang chính chuyển phím vào để chọn nút.
@@ -64,6 +65,11 @@
             report(v, false);
         }, true);
         addEventListener('pause', ev => { const v = videoOf(ev); if ( v !== null ) { report(v, true); } }, true);
+        // Hết phim → app đếm ngược sang tập sau (nếu trang có).
+        addEventListener('ended', ev => {
+            const v = videoOf(ev);
+            if ( v !== null && isMain(v) ) { send({ type: 'mediaPos', t: v.duration, d: v.duration, flush: true, ended: true }); }
+        }, true);
         addEventListener('pagehide', ( ) => {
             for ( const v of document.querySelectorAll('video') ) { report(v, true); }
         });
@@ -237,6 +243,7 @@
         if ( location.href !== lastHref ) {
             lastHref = location.href;
             schedulePlayerPick();
+            scheduleNextCheck();
         }
     }
 
@@ -641,6 +648,7 @@
     /** Xử lý một phím; trả về true nếu đã dùng phím (để chặn hành vi mặc định của trang). */
     function handleKey(key) {
         if ( key === 'F9' ) { return requestBlockMenu(); }
+        if ( key === NEXT_KEY ) { goNextEpisode(); return true; }
         // App gửi Escape khi bấm Back lúc đang phóng to bằng CSS.
         if ( key === 'Escape' ) {
             if ( pseudoFull === null ) { return false; }
@@ -691,10 +699,157 @@
         return true;
     }
 
+    // ── Tập tiếp theo ───────────────────────────────────────────────────────
+    // Trang xem phim: tìm liên kết / nút sang tập kế (danh sách tập hoặc nút "Tập tiếp") rồi báo app.
+    // Cuối phim app hiện thẻ "Tập tiếp theo"; bấm OK (hoặc hết giờ đếm ngược) → app gửi F10 → mở tập đó.
+    const NEXT_KEY = 'F10';
+    const NEXT_CHECK_MS = [ 600, 2500, 6000 ];
+    const fold = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd')
+        .toLowerCase().replace(/\s+/g, ' ').trim();
+    // "Tập 5", "Tap 05 - END", "Ep 5", "E05", "5", "05 Vietsub"…
+    const EP_LABEL = /^(?:tap|ep|episode|e)?\s*\.?\s*0*(\d{1,4})(?:\s*[-:|]?\s*(?:end|full|hd|fhd|vietsub|thuyet minh|long tieng|tm|lt|vs|raw|sd|cam))*$/;
+    // "Tập tiếp theo", "Xem tập sau", "Next episode" ("Next" trơn thường là nút của băng chuyền ảnh).
+    const NEXT_TEXT = /^(?:xem )?(?:tap (?:tiep(?: theo)?|sau|ke(?: tiep)?)|next (?:episode|ep))(?:\W|$)/;
+    const NEXT_ATTR = /next[-_ ]?(?:ep|episode|tap)|(?:ep|episode)[-_ ]?next|tap[-_ ]?(?:tiep|sau)/i;
+    const ACTIVE_MARK = /(?:^|[\s_-])(?:active|current|selected|playing|now|on-?air|watching)(?:$|[\s_-])/i;
+    const URL_EP = /(?:tap|ep|episode)[-_=]?0*(\d{1,4})(?!\d)/gi;
+    const CLICKABLE = 'a[href], button, [role=button]';
+    let nextSent = '';
+    let nextLabel = null;
+    let leaving = false;
+    addEventListener('beforeunload', ( ) => { leaving = true; });
+    addEventListener('pageshow', ( ) => { leaving = false; });
+
+    const pageKey = u => u.split('#')[0].replace(/\/+$/, '');
+    const classOf = el => (typeof el.className === 'string' ? el.className : el.getAttribute('class') || '');
+    const isDisabled = el => el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' ||
+        /(?:^|\s)disabled(?:\s|$)/.test(classOf(el));
+
+    function sameSite(a) {
+        try {
+            const u = new URL(a.href, location.href);
+            const base = h => h.split('.').slice(-2).join('.');
+            return /^https?:$/.test(u.protocol) && base(u.hostname) === base(location.hostname);
+        } catch {
+            return false;
+        }
+    }
+
+    /** Ô tập đang xem được trang đánh dấu (class active/current…, aria-current). */
+    function isActiveEp(el) {
+        const cur = el.getAttribute('aria-current');
+        if ( (cur !== null && cur !== 'false') || el.getAttribute('aria-selected') === 'true' ) { return true; }
+        if ( ACTIVE_MARK.test(classOf(el)) ) { return true; }
+        const p = el.parentElement;
+        return p !== null && p.children.length === 1 && ACTIVE_MARK.test(classOf(p));
+    }
+
+    /** Khung chứa danh sách tập (bỏ qua lớp bọc riêng từng ô, vd. ul > li > a → ul). */
+    function groupOf(el) {
+        let box = el.parentElement;
+        if ( box !== null && box.children.length === 1 && box.parentElement !== null ) { box = box.parentElement; }
+        return box;
+    }
+
+    function episodeItems() {
+        const out = [];
+        for ( const el of document.querySelectorAll(CLICKABLE) ) {
+            const raw = el.textContent;
+            if ( raw.length > 40 ) { continue; }
+            const m = EP_LABEL.exec(fold(raw) || fold(el.title));
+            if ( m === null || (el.tagName === 'A' && !sameSite(el)) ) { continue; }
+            out.push({ el, n: parseInt(m[1], 10) });
+        }
+        return out;
+    }
+
+    /** Ô "tập n + 1" trong cùng danh sách với tập n. */
+    function nextIn(items, n, group) {
+        const list = group === null ? items : items.filter(e => groupOf(e.el) === group);
+        if ( list.length < 2 ) { return null; }
+        const hit = list.find(e => e.n === n + 1 && !isDisabled(e.el));
+        return hit ? { el: hit.el, label: `Tập ${n + 1}` } : null;
+    }
+
+    function urlEpisode() {
+        let path = location.pathname + location.search;
+        try { path = decodeURIComponent(path); } catch { }
+        let n = null;
+        for ( const m of path.matchAll(URL_EP) ) { n = parseInt(m[1], 10); }
+        return n;
+    }
+
+    /** { el, label } của tập kế tiếp, hoặc null. */
+    function findNextEpisode() {
+        const here = pageKey(location.href);
+        const items = episodeItems();
+        // 1) Danh sách tập, biết chắc tập đang xem (ô trỏ tới đúng trang này, hoặc ô được đánh dấu).
+        const cur = items.find(e => e.el.tagName === 'A' && pageKey(e.el.href) === here) || items.find(e => isActiveEp(e.el));
+        if ( cur !== undefined ) {
+            const next = nextIn(items, cur.n, groupOf(cur.el));
+            if ( next !== null ) { return next; }
+        }
+        // 2) Nút "Tập tiếp / Tập sau / Next episode" do trang làm sẵn.
+        for ( const el of document.querySelectorAll(CLICKABLE) ) {
+            if ( isDisabled(el) ) { continue; }
+            const raw = el.textContent;
+            const text = fold(raw.length <= 60 ? raw : '') || fold(el.getAttribute('aria-label')) || fold(el.title);
+            if ( !NEXT_TEXT.test(text) && !NEXT_ATTR.test(`${classOf(el)} ${el.id}`) ) { continue; }
+            if ( el.tagName === 'A' && (!sameSite(el) || pageKey(el.href) === here) ) { continue; }
+            const m = /\d{1,4}/.exec(text);
+            return { el, label: m !== null ? `Tập ${parseInt(m[0], 10)}` : 'Tập tiếp theo' };
+        }
+        // 3) Số tập trong địa chỉ trang (…/tap-5, ?ep=5).
+        const n = urlEpisode();
+        if ( n !== null ) {
+            const at = items.find(e => e.n === n);
+            return nextIn(items, n, at !== undefined ? groupOf(at.el) : null);
+        }
+        return null;
+    }
+
+    function reportNextEpisode() {
+        // Không cần chờ trình phát: thẻ chỉ hiện khi trang báo vị trí của một video dài (≥ 2 phút).
+        const found = findNextEpisode();
+        const label = found !== null ? found.label : null;
+        const key = `${pageKey(location.href)}|${label}`;
+        // Không có tập sau: chỉ báo khi trước đó đã báo có (app tự xóa khi đổi trang).
+        if ( key === nextSent || (label === null && nextLabel === null) ) { return; }
+        nextSent = key;
+        nextLabel = label;
+        notifyApp({ type: 'nextEp', label, top: location.href });
+    }
+
+    function scheduleNextCheck() {
+        nextLabel = null;
+        for ( const ms of NEXT_CHECK_MS ) { setTimeout(reportNextEpisode, ms); }
+    }
+    // Trình phát nạp muộn (sau khi bấm "Xem phim") → kiểm tra lại khi video bắt đầu phát.
+    addEventListener('playing', ( ) => { if ( nextLabel === null ) { reportNextEpisode(); } }, true);
+
+    function goNextEpisode() {
+        const found = findNextEpisode();
+        if ( found === null ) {
+            nextSent = '';
+            notifyApp({ type: 'nextEp', label: null, top: location.href });
+            return;
+        }
+        if ( pseudoFull !== null ) { setPseudoFullscreen(null, false); }
+        const el = found.el;
+        const before = location.href;
+        el.click(); // trang SPA (Next.js…) tự chuyển tập không cần tải lại
+        if ( el.tagName === 'A' && /^https?:/.test(el.href) ) {
+            const href = el.href;
+            // Trang chặn click giả lập (không đi đâu) → mở thẳng địa chỉ.
+            setTimeout(( ) => { if ( !leaving && location.href === before ) { location.assign(href); } }, 1500);
+        }
+    }
+
     if ( document.readyState === 'complete' ) {
         schedulePlayerPick();
+        scheduleNextCheck();
     } else {
-        addEventListener('load', schedulePlayerPick, { once: true });
+        addEventListener('load', ( ) => { schedulePlayerPick(); scheduleNextCheck(); }, { once: true });
     }
 
     addEventListener('keydown', ev => {

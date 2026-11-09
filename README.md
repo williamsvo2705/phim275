@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.9.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
+> Trạng thái: **0.10.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
 
 ## Tính năng
 
@@ -19,6 +19,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Chuyển khối (mặc định) | Mọi trang web điều khiển kiểu Android TV: ◀▲▶▼ nhảy giữa các khối bấm được (liên kết, nút, ô phim) có viền đỏ, OK = chạm thật vào giữa khối (bấm được cả iframe trình phát) · trang xem phim: tự chọn sẵn trình phát · hộp thoại trong trình phát ("Tiếp tục xem / Xem lại từ đầu") chọn bằng ◀▶ + OK · trang SPA (Next.js/React) đổi nội dung vẫn chọn đúng khối · extension [tvnav](app/src/main/assets/extensions/tvnav/content.js) |
 | Remote | Con trỏ ảo tăng tốc (đổi nhanh ở đầu ☰ Menu) · giữ OK = menu chuột phải (mở link tab mới, bookmark link) · chế độ phím Tab · cuộn đúng khung dưới con trỏ · Back/Giữ Back/Menu · CH+/CH− · tìm kiếm giọng nói |
 | Xem tiếp đúng chỗ | Nhớ vị trí video đang xem (cả trong iframe trình phát) theo từng trang → mở lại tự tua tới chỗ cũ, báo "Xem tiếp từ 12:34" · trang chủ "Xem tiếp" có thanh tiến độ + thời gian còn lại · bỏ qua quảng cáo chèn đầu (< 2 phút), xem gần hết thì phát từ đầu · trang có sẵn tính năng xem tiếp riêng thì app tự nhường |
+| Tập tiếp theo | Trang xem phim có danh sách tập (hoặc nút "Tập tiếp") → cuối phim hiện thẻ "Tập tiếp theo" (cả khi đang toàn màn hình): OK = xem ngay, Back = ẩn · hết phim tự chuyển sau 10 giây (tắt được trong Cài đặt → Xem phim) · chạy với cả trang SPA (Cobephim/RoPhim) |
 | Xem video | Khối video: OK = phát/dừng, **OK × 2 = toàn màn hình** (viền đỏ tự ẩn), Back / OK × 2 để thoát · giữ màn hình sáng khi đang phát · Phím media của remote (Play/Pause, tua ±10s) điều khiển video kể cả trong iframe · toàn màn hình: ◀ ▶ tua, OK dừng/phát, ▲▼ hiện con trỏ · cỡ chữ 100–175% |
 | Nhập chữ | Ép hiện bàn phím TV (LeanKey, Gboard…) · ô nhập dự phòng tự bật khi bàn phím không hiện |
 | Tiện ích | Bookmark (hiện trên trang chủ), lịch sử, chọn công cụ tìm kiếm (Google, Cốc Cốc, Bing, DuckDuckGo, YouTube), Desktop/Mobile, xóa dữ liệu |

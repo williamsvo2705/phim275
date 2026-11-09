@@ -73,6 +73,7 @@ import phim275.tv.com.data.AppSettings
 import phim275.tv.com.data.AppSettings.NavMode
 import phim275.tv.com.data.DeviceProfile
 import phim275.tv.com.data.LinkStore
+import phim275.tv.com.data.NextEpisodePolicy
 import phim275.tv.com.data.PlaybackCodec
 import phim275.tv.com.data.PlaybackStore
 import phim275.tv.com.data.SavedSession
@@ -107,6 +108,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private lateinit var btnTabs: TextView
     private lateinit var btnBookmark: ImageView
     private lateinit var snackbar: TextView
+    private lateinit var nextCard: View
+    private lateinit var nextCardTitle: TextView
+    private lateinit var nextCardHint: TextView
+    private lateinit var nextCardCountdown: ProgressBar
     private lateinit var panel: SidePanel
 
     private lateinit var settings: AppSettings
@@ -132,6 +137,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private var topPushAccumPx = 0f
     private var blockedPopupUrl: String? = null
     private var blockedPopupAtMs = 0L
+
+    /** Tập kế tiếp theo trang (URL bỏ #) do extension tvnav tìm thấy; vài trang gần nhất. */
+    private val nextEpisodes = LinkedHashMap<String, String>()
+    private var nextCardPage: String? = null      // thẻ "Tập tiếp theo" đang hiện cho trang này
+    private var nextCardDismissedFor: String? = null
+    private var nextCountdownLeft = 0
+    private var nextCardOkDown = false
+    private var nextRequestedAtMs = 0L
 
     private val handler = Handler(Looper.getMainLooper())
     private val diagUpdater = object : Runnable {
@@ -208,6 +221,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         btnTabs = findViewById(R.id.btn_tabs)
         btnBookmark = findViewById(R.id.btn_bookmark)
         snackbar = findViewById(R.id.snackbar)
+        nextCard = findViewById(R.id.next_card)
+        nextCardTitle = findViewById(R.id.next_card_title)
+        nextCardHint = findViewById(R.id.next_card_hint)
+        nextCardCountdown = findViewById(R.id.next_card_countdown)
         panel = SidePanel(this).apply {
             onHidden = { if (onboarding == null && !isToolbarMode()) geckoView.requestFocus() }
         }
@@ -230,6 +247,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
         TvNavBridge.playbackListener = ::onPlaybackPosition
         TvNavBridge.resumeProvider = ::resumePositionFor
+        TvNavBridge.nextEpisodeListener = ::onNextEpisode
 
         // Mở lại các tab lần trước (sau khi cập nhật / Android đóng app vì thiếu RAM).
         val saved = if (settings.restoreTabs) sessionStore.load() else null
@@ -312,6 +330,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.contextListener = null
         TvNavBridge.playbackListener = null
         TvNavBridge.resumeProvider = null
+        TvNavBridge.nextEpisodeListener = null
+        handler.removeCallbacks(nextCountdownTick)
         handler.removeCallbacksAndMessages(null)
         cursor.release()
         if (isFinishing) tabs.closeAll()
@@ -461,6 +481,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         pageScrollY = 0
         progress.visibility = View.GONE
         renderUrlBar(tab.url) // đổi tab → luôn hiện URL của tab mới
+        hideNextCard()
         updateTabButton()
         updateBookmarkButton()
     }
@@ -520,6 +541,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             if (tabs.isCurrent(session)) {
                 renderUrlBar(url)
                 updateBookmarkButton()
+                if (nextCardPage != null && nextCardPage != url?.let { PlaybackCodec.key(it) }) hideNextCard()
             }
         }
 
@@ -798,6 +820,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     /** Mở bảng: ẩn thanh công cụ và thông báo (bảng che bên phải, không cần cả hai cùng lúc). */
     private fun beforePanel() {
         if (isToolbarMode()) toolbar.visibility = View.GONE
+        hideNextCard()
         handler.removeCallbacks(hideSnackbar)
         snackbar.visibility = View.GONE
     }
@@ -1049,6 +1072,12 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                         }
                     },
                 )),
+                PanelSection("Xem phim", listOf(
+                    PanelItem("Tự chuyển tập khi hết phim", R.drawable.ic_forward, on = settings.autoNextEpisode, keepOpen = true) {
+                        settings.autoNextEpisode = !settings.autoNextEpisode
+                        panel.refresh()
+                    },
+                )),
                 PanelSection("Chặn quảng cáo", listOf(
                     PanelItem("DNS chặn quảng cáo (AdGuard)", R.drawable.ic_shield, on = settings.adBlockDns, keepOpen = true) {
                         settings.adBlockDns = !settings.adBlockDns
@@ -1166,12 +1195,13 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     // ───────────────────────────── Xem tiếp đúng chỗ ─────────────────────────────
 
     /** Trang (hoặc iframe trình phát của nó) báo vị trí video chính đang xem. */
-    private fun onPlaybackPosition(page: String?, positionSec: Double, durationSec: Double, flush: Boolean) {
+    private fun onPlaybackPosition(page: String?, positionSec: Double, durationSec: Double, flush: Boolean, ended: Boolean) {
         // Không rõ trang nào lúc đang rời trang → bỏ qua (tab có thể đã sang trang mới; vị trí đã ghi ≤ 5 giây trước).
         if (page == null && flush) return
         val url = page ?: currentUrl
         if (!LinkStore.isRecordable(url)) return
         playback.record(url!!, positionSec, durationSec, flush)
+        updateNextCard(url, positionSec, durationSec, ended)
     }
 
     /** Video vừa bắt đầu phát: tua tới chỗ lần trước nếu cùng video và chưa xem hết. */
@@ -1186,6 +1216,118 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         val position = PlaybackCodec.resumePosition(playback.get(url!!), durationSec, startSec, playback.siteResumes(host)) ?: return null
         showToast("▶ Xem tiếp từ ${PlaybackCodec.formatTime(position)} · ⏪ tua lại")
         return position
+    }
+
+    // ───────────────────────────── Tập tiếp theo ─────────────────────────────
+
+    /** Trang xem phim báo tập kế tiếp (null = không có / không mở được). */
+    private fun onNextEpisode(page: String?, label: String?) {
+        val url = page ?: currentUrl ?: return
+        val key = PlaybackCodec.key(url)
+        if (label == null) {
+            nextEpisodes.remove(key)
+            if (nextCardPage == key) hideNextCard()
+            if (SystemClock.uptimeMillis() - nextRequestedAtMs < NEXT_REQUEST_WINDOW_MS) {
+                nextRequestedAtMs = 0
+                showToast("Không tìm thấy tập tiếp theo trên trang này")
+            }
+            return
+        }
+        nextEpisodes.remove(key)
+        nextEpisodes[key] = NextEpisodePolicy.displayLabel(label)
+        while (nextEpisodes.size > MAX_NEXT_EPISODES) nextEpisodes.remove(nextEpisodes.keys.first())
+        if (nextCardPage == key) nextCardTitle.text = nextEpisodes[key]
+    }
+
+    /** Mỗi lần trang báo vị trí video: tới đoạn cuối → hiện thẻ; hết phim → đếm ngược tự chuyển tập. */
+    private fun updateNextCard(url: String, positionSec: Double, durationSec: Double, ended: Boolean) {
+        val key = PlaybackCodec.key(url)
+        val label = nextEpisodes[key] ?: return
+        if (nextCardDismissedFor == key || currentUrl?.let { PlaybackCodec.key(it) } != key) return
+        when {
+            ended -> if (nextCountdownLeft == 0) showNextCard(key, label, countdown = settings.autoNextEpisode)
+            NextEpisodePolicy.isCardDue(positionSec, durationSec) -> if (nextCardPage == null) showNextCard(key, label, countdown = false)
+            nextCountdownLeft == 0 -> hideNextCard() // đã tua ngược khỏi đoạn cuối
+        }
+    }
+
+    private fun showNextCard(key: String, label: String, countdown: Boolean) {
+        if (panel.isShowing || onboarding != null) return
+        nextCardPage = key
+        nextCardTitle.text = label
+        handler.removeCallbacks(nextCountdownTick)
+        nextCountdownLeft = if (countdown) NextEpisodePolicy.AUTO_ADVANCE_SEC else 0
+        nextCardCountdown.visibility = if (countdown) View.VISIBLE else View.GONE
+        if (countdown) {
+            nextCardCountdown.max = NextEpisodePolicy.AUTO_ADVANCE_SEC * 10
+            nextCardCountdown.progress = nextCardCountdown.max
+            handler.postDelayed(nextCountdownTick, NEXT_TICK_MS)
+        }
+        renderNextCardHint()
+        nextCard.animate().cancel()
+        if (nextCard.visibility != View.VISIBLE) {
+            nextCard.alpha = 0f
+            nextCard.translationX = dp(32f)
+            nextCard.visibility = View.VISIBLE
+        }
+        nextCard.animate().alpha(1f).translationX(0f).setDuration(220).start()
+    }
+
+    private fun renderNextCardHint() {
+        nextCardHint.text = if (nextCountdownLeft > 0) {
+            "Tự chuyển sau $nextCountdownLeft giây · OK: xem ngay · Back: hủy"
+        } else {
+            "OK: xem ngay · Back: ẩn"
+        }
+    }
+
+    /** Đếm ngược mỗi 100 ms (thanh chạy mượt), cập nhật chữ mỗi giây. */
+    private var nextTicks = 0
+    private val nextCountdownTick = object : Runnable {
+        override fun run() {
+            if (nextCardPage == null || nextCountdownLeft <= 0) return
+            nextTicks++
+            nextCardCountdown.progress = (nextCardCountdown.progress - 1).coerceAtLeast(0)
+            if (nextTicks % 10 == 0) {
+                nextCountdownLeft--
+                if (nextCountdownLeft == 0) {
+                    playNextEpisode()
+                    return
+                }
+                renderNextCardHint()
+            }
+            handler.postDelayed(this, NEXT_TICK_MS)
+        }
+    }
+
+    private fun hideNextCard() {
+        handler.removeCallbacks(nextCountdownTick)
+        nextCountdownLeft = 0
+        nextTicks = 0
+        nextCardOkDown = false
+        if (nextCardPage == null) return
+        nextCardPage = null
+        nextCard.animate().cancel()
+        nextCard.animate().alpha(0f).translationX(dp(32f)).setDuration(160).withEndAction {
+            nextCard.visibility = View.GONE
+        }.start()
+    }
+
+    /** Back trên thẻ: ẩn và không hiện lại cho tập này. */
+    private fun dismissNextCard() {
+        nextCardDismissedFor = nextCardPage
+        hideNextCard()
+    }
+
+    /** Mở tập kế: extension tvnav nhận phím F10 và bấm vào ô tập kế tiếp trên trang. */
+    private fun playNextEpisode() {
+        val key = nextCardPage ?: return
+        val label = nextEpisodes[key] ?: "tập tiếp theo"
+        nextCardDismissedFor = key
+        hideNextCard()
+        nextRequestedAtMs = SystemClock.uptimeMillis()
+        showToast("⏭ Đang mở $label…")
+        sendKeyToPage(KeyEvent.KEYCODE_F10, 0)
     }
 
     // ───────────────────────────── Tải file ─────────────────────────────
@@ -1398,6 +1540,29 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                 }
             }
             return super.dispatchKeyEvent(event)
+        }
+
+        // Thẻ "Tập tiếp theo": OK = xem ngay, Back = ẩn; phím khác vẫn điều khiển video như thường.
+        if (nextCardPage != null) {
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A,
+                -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        if (event.repeatCount == 0) nextCardOkDown = true
+                        return true
+                    }
+                    if (nextCardOkDown) { // chỉ nhận cú bấm bắt đầu khi thẻ đã hiện
+                        nextCardOkDown = false
+                        playNextEpisode()
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_UP) dismissNextCard()
+                    return true
+                }
+            }
         }
 
         // Phím media của remote (Play/Pause, tua) → điều khiển video trên trang.
@@ -1787,5 +1952,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val SNACKBAR_BASE_MS = 2200L
         private const val SNACKBAR_PER_CHAR_MS = 35L
         private const val SNACKBAR_MAX_MS = 5000L
+        private const val MAX_NEXT_EPISODES = 20
+        private const val NEXT_TICK_MS = 100L
+        private const val NEXT_REQUEST_WINDOW_MS = 4000L
     }
 }

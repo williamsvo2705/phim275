@@ -53,6 +53,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_RESTORE_TABS, true)
         set(value) = prefs.edit().putBoolean(KEY_RESTORE_TABS, value).apply()
 
+    /** Hết phim → tự mở tập kế tiếp sau vài giây đếm ngược (khi trang có danh sách tập). */
+    var autoNextEpisode: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_NEXT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_NEXT, value).apply()
+
     var autoUpdateCheck: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_UPDATE, value).apply()
@@ -75,6 +80,7 @@ class AppSettings(context: Context) {
         const val KEY_AUTO_UPDATE = "auto_update"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_RESTORE_TABS = "restore_tabs"
+        const val KEY_AUTO_NEXT = "auto_next_episode"
         const val KEY_LOW_RAM = "low_ram_mode"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     }
