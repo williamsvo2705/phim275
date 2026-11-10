@@ -1411,7 +1411,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             smoothPage = page
             @Suppress("DEPRECATION")
             startActivityForResult(
-                SmoothPlayerActivity.intent(this, stream, currentTab?.title, GeckoSession.getDefaultUserAgent()),
+                SmoothPlayerActivity.intent(this, stream, currentTab?.title?.takeIf { it.isNotBlank() } ?: Uri.parse(page).host, GeckoSession.getDefaultUserAgent()),
                 REQ_SMOOTH,
             )
         }

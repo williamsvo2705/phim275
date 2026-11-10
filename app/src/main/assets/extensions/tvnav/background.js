@@ -32,6 +32,34 @@ const sentHeaders = new Map(); // requestId → { referer, origin, ua }
 // được, nên giữ bản chép nhận được lúc trang tải (theo frame) và gửi kèm cho app.
 const MAX_PLAYLIST_CHARS = 400000;
 const playlists = new Map();   // frame → Map(url → nội dung)
+// Playlist trang tự giải mã (hook.js bắt kết quả crypto.subtle.decrypt) — ghép với playlist mã hóa cùng frame.
+const decoded = new Map();     // frame → [nội dung chưa ghép]
+
+/** Ghép playlist đã giải mã với playlist mã hóa (opaque) của cùng frame, theo thứ tự tải. */
+function attachDecoded(tabId, frame) {
+    const texts = decoded.get(frame);
+    if ( !texts || texts.length === 0 ) { return; }
+    const waiting = (streams.get(tabId) || []).filter(s => s.frame === frame && s.opaque);
+    while ( texts.length !== 0 && waiting.length !== 0 ) {
+        const s = waiting.shift();
+        s.opaque = false;
+        const map = playlists.get(frame) || new Map();
+        map.set(s.url, texts.shift());
+        playlists.set(frame, map);
+    }
+}
+
+browser.runtime.onMessage.addListener((msg, sender) => {
+    if ( msg instanceof Object === false || msg.type !== 'playlistText' || typeof msg.text !== 'string' ) { return; }
+    if ( !sender || !sender.tab || sender.tab.id < 0 ) { return; }
+    const frame = noHash(typeof msg.frame === 'string' ? msg.frame : sender.url);
+    const texts = decoded.get(frame) || [];
+    texts.push(msg.text);
+    while ( texts.length > 4 ) { texts.shift(); }
+    decoded.set(frame, texts);
+    while ( decoded.size > 8 ) { decoded.delete(decoded.keys().next().value); }
+    attachDecoded(sender.tab.id, frame);
+});
 const HLS_TYPE = /mpegurl/i;
 const HLS_URL = /\.m3u8(?:[?#]|$)/i;
 const noHash = u => typeof u === 'string' ? u.split('#')[0] : '';
@@ -64,6 +92,7 @@ function capturePlaylist(d) {
             for ( const s of streams.get(d.tabId) || [] ) {
                 if ( s.url === d.url ) { s.opaque = true; }
             }
+            attachDecoded(d.tabId, frame); // trang có thể đã giải mã xong trước khi phản hồi kết thúc
             return;
         }
         const map = playlists.get(frame) || new Map();
@@ -124,6 +153,7 @@ if ( browser.webRequest ) {
         const list = streams.get(d.tabId);
         if ( list ) { streams.set(d.tabId, list.filter(s => s.frame !== noHash(d.url))); }
         playlists.delete(noHash(d.url));
+        decoded.delete(noHash(d.url));
     }, { urls: [ '<all_urls>' ], types: [ 'main_frame', 'sub_frame' ] });
     browser.tabs.onRemoved.addListener(id => { streams.delete(id); });
 }
@@ -155,7 +185,13 @@ async function handlePortMessage(msg) {
         const found = pickStream(tabs[0].id, video instanceof Object ? video : null);
         if ( !found ) { return { ok: false }; }
         const copies = playlists.get(found.frame);
-        const stream = Object.assign({}, found, { playlists: copies ? Object.fromEntries(copies) : {} });
+        let origin = found.origin;
+        try { if ( !origin ) { origin = new URL(found.frame).origin; } } catch { }
+        const stream = Object.assign({}, found, {
+            origin,
+            referer: found.referer || (origin ? origin + '/' : ''),
+            playlists: copies ? Object.fromEntries(copies) : {},
+        });
         return { ok: true, info: { stream, video: video instanceof Object ? video : null } };
     }
     if ( msg.type !== 'video' ) { return { error: 'unknown' }; }
