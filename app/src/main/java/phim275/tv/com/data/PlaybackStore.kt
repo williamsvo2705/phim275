@@ -126,6 +126,15 @@ class PlaybackStore(context: Context) {
     private fun selfResumingHosts(): Set<String> =
         selfResuming ?: (prefs.getStringSet(KEY_HOSTS, null)?.toSet() ?: emptySet()).also { selfResuming = it }
 
+    /** Quên vị trí đang xem của một trang (người xem xóa ô "Xem tiếp" trên trang chủ). */
+    fun remove(url: String) {
+        val k = PlaybackCodec.key(url)
+        if (k !in all()) return
+        val next = LinkedHashMap(all()).apply { remove(k) }
+        cache = next
+        prefs.edit().putString(KEY, PlaybackCodec.encode(next)).apply()
+    }
+
     fun clear() {
         cache = emptyMap()
         prefs.edit().remove(KEY).apply()

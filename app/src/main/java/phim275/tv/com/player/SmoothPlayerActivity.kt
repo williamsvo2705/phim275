@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -32,6 +33,7 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -39,6 +41,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import phim275.tv.com.R
+import phim275.tv.com.data.NextEpisodePolicy
 import phim275.tv.com.data.PlayerOptions
 import phim275.tv.com.data.SeekPolicy
 import phim275.tv.com.data.SmoothResult
@@ -70,6 +73,9 @@ class SmoothPlayerActivity : Activity() {
     private lateinit var menuItems: LinearLayout
     private lateinit var toast: TextView
     private lateinit var subtitle: TextView
+    private lateinit var nextCard: View
+    private lateinit var nextTitle: TextView
+    private lateinit var nextHint: TextView
 
     private var started = false       // đã hiện khung hình đầu tiên
     private var retried = false       // đã thử nạp lại một lần sau lỗi mạng giữa chừng
@@ -77,6 +83,17 @@ class SmoothPlayerActivity : Activity() {
     private var seekDeltaSec = 0
     private var seekFromMs = -1L
     private var menuLevel: (() -> Unit)? = null // bảng con đang mở → Back quay về bảng chính
+    private var nextLabel: String? = null      // tên tập kế (trang báo) — null = không có
+    private var autoNext = true
+    private var nextDismissed = false          // Back trên thẻ tập kế → không hiện lại, hết phim thì về trang
+    private var startGate = true               // chờ tải trước (4K) rồi mới phát
+    private var gateStartMs = 0L
+    private var firstFrameMs = 0L
+    private var stableSent = false
+    private var lastReportMs = 0L
+    private var statsAtMs = 0L
+    private var statsRendered = 0
+    private var statsDropped = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +112,11 @@ class SmoothPlayerActivity : Activity() {
         menuItems = findViewById(R.id.player_menu_items)
         toast = findViewById(R.id.player_toast)
         subtitle = findViewById(R.id.player_subtitle)
+        nextCard = findViewById(R.id.player_next)
+        nextTitle = findViewById(R.id.player_next_title)
+        nextHint = findViewById(R.id.player_next_hint)
+        nextLabel = intent.getStringExtra(EXTRA_NEXT_LABEL)
+        autoNext = intent.getBooleanExtra(EXTRA_AUTO_NEXT, true)
 
         val url = intent.dataString
         if (url == null) {
@@ -113,8 +135,89 @@ class SmoothPlayerActivity : Activity() {
             .build()
         player.setMediaItem(item, (intent.getDoubleExtra(EXTRA_START_SEC, 0.0) * 1000).toLong())
         player.prepare()
-        player.playWhenReady = true
+        // Chưa phát ngay: đủ dữ liệu (STATE_READY) mới phát; video 4K chờ thêm vài giây đệm (xem maybeStartPlayback).
+        player.playWhenReady = false
+        gateStartMs = SystemClock.uptimeMillis()
+        handler.post(heartbeat)
         showOsd()
+    }
+
+    /** Đủ đệm → phát. Video độ phân giải cao: chờ thêm (tối đa vài giây) để bộ giải mã không bị dồn lúc mới vào. */
+    private fun maybeStartPlayback() {
+        if (!startGate || finishing) return
+        val need = SmoothResult.prebufferMs(player.videoFormat?.height ?: 0)
+        val waited = SystemClock.uptimeMillis() - gateStartMs
+        if (player.totalBufferedDuration >= need || waited >= MAX_GATE_MS) {
+            startGate = false
+            player.playWhenReady = true
+            return
+        }
+        loading.visibility = View.VISIBLE
+        handler.postDelayed(::maybeStartPlayback, GATE_POLL_MS)
+    }
+
+    /** Mỗi giây: báo vị trí cho app, thẻ tập kế, thống kê khung hình, báo "đã phát ổn định". */
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (finishing) return
+            val now = SystemClock.uptimeMillis()
+            val pos = player.currentPosition / 1000.0
+            val dur = durationSec()
+            if (player.isPlaying && now - lastReportMs >= REPORT_MS) {
+                lastReportMs = now
+                host?.onSmoothPosition(pos, dur, false)
+            }
+            updateNextCard(pos, dur)
+            if (!stableSent && firstFrameMs > 0 && player.isPlaying && now - firstFrameMs >= STABLE_MS) {
+                stableSent = true
+                host?.onSmoothStable()
+            }
+            logFrameStats(now)
+            handler.postDelayed(this, HEARTBEAT_MS)
+        }
+    }
+
+    private fun logFrameStats(now: Long) {
+        val counters = player.videoDecoderCounters ?: return
+        counters.ensureUpdated()
+        if (statsAtMs == 0L) {
+            statsAtMs = now
+            statsRendered = counters.renderedOutputBufferCount
+            statsDropped = counters.droppedBufferCount
+            return
+        }
+        if (now - statsAtMs < STATS_MS) return
+        val shown = counters.renderedOutputBufferCount - statsRendered
+        val dropped = counters.droppedBufferCount - statsDropped
+        if (shown + dropped > 0) {
+            Log.i(TAG, "Khung hình: %d hiện, %d bỏ (%.1f%%) trong %.0f giây · %s".format(
+                shown, dropped, 100.0 * dropped / (shown + dropped), (now - statsAtMs) / 1000.0,
+                player.videoFormat?.let { "${it.width}x${it.height}" } ?: "?"))
+        }
+        statsAtMs = now
+        statsRendered = counters.renderedOutputBufferCount
+        statsDropped = counters.droppedBufferCount
+    }
+
+    // ───────────────────────────── Tập tiếp theo ─────────────────────────────
+
+    private fun updateNextCard(pos: Double, dur: Double) {
+        val label = nextLabel ?: return
+        val due = !nextDismissed && NextEpisodePolicy.isCardDue(pos, dur)
+        if (due == (nextCard.visibility == View.VISIBLE)) return
+        if (due) {
+            nextTitle.text = label
+            nextHint.text = if (autoNext) "Tự chuyển khi hết phim · OK: xem ngay · Back: ẩn" else "OK: xem ngay · Back: ẩn"
+            nextCard.alpha = 0f
+            nextCard.visibility = View.VISIBLE
+            nextCard.animate().alpha(1f).setDuration(200).start()
+        } else {
+            nextCard.visibility = View.GONE
+        }
+    }
+
+    private fun playNext() {
+        if (nextLabel == null) finishWith(SmoothResult.ENDED) else finishWith(SmoothResult.NEXT)
     }
 
     private fun buildPlayer(): ExoPlayer {
@@ -137,7 +240,7 @@ class SmoothPlayerActivity : Activity() {
         return ExoPlayer.Builder(this, DefaultRenderersFactory(this).setEnableDecoderFallback(true))
             .setLoadControl(loadControl)
             .setBandwidthMeter(bandwidth)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(PlaylistCopyDataSource.Factory(takePlaylistCopies(), http)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(PlaylistCopyDataSource.Factory(takePlaylistCopies(), withCookies(http))))
             .build().also { p ->
                 p.addListener(playerListener)
                 p.addAnalyticsListener(object : AnalyticsListener {
@@ -152,21 +255,39 @@ class SmoothPlayerActivity : Activity() {
             }
     }
 
+    /** Gửi cookie trang đã dùng (vd. cf_clearance của Cloudflare) — chỉ cho đúng máy chủ đã cấp cookie đó. */
+    private fun withCookies(upstream: DefaultHttpDataSource.Factory): androidx.media3.datasource.DataSource.Factory {
+        val cookies = pendingCookies
+        pendingCookies = emptyMap()
+        if (cookies.isEmpty()) return upstream
+        return ResolvingDataSource.Factory(upstream) { spec ->
+            val cookie = spec.uri.host?.lowercase()?.let { cookies[it] }
+            if (cookie == null) spec else spec.withAdditionalHeaders(mapOf("Cookie" to cookie))
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-            if (state == Player.STATE_ENDED) finishWith(SmoothResult.ENDED)
-            if (state == Player.STATE_READY) updateOsd()
+            if (state == Player.STATE_ENDED) {
+                if (nextLabel != null && autoNext && !nextDismissed) finishWith(SmoothResult.NEXT) else finishWith(SmoothResult.ENDED)
+            }
+            if (state == Player.STATE_READY) {
+                maybeStartPlayback()
+                updateOsd()
+            }
         }
 
         override fun onRenderedFirstFrame() {
             if (!started) Log.i(TAG, "Bắt đầu phát ${player.videoFormat?.let { "${it.width}x${it.height} ${it.frameRate}fps" }}")
             started = true
-            loading.visibility = View.GONE
+            if (firstFrameMs == 0L) firstFrameMs = SystemClock.uptimeMillis()
+            if (!startGate) loading.visibility = View.GONE
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updateOsd()
+            if (!isPlaying && !startGate) host?.onSmoothPosition(player.currentPosition / 1000.0, durationSec(), true)
             if (!isPlaying && player.playbackState == Player.STATE_READY) showOsd(sticky = true)
         }
 
@@ -442,12 +563,22 @@ class SmoothPlayerActivity : Activity() {
             }
             return super.dispatchKeyEvent(event) // ▲▼ / OK trong bảng
         }
+        val cardShown = nextCard.visibility == View.VISIBLE
         if (event.action == KeyEvent.ACTION_UP) {
             if (event.keyCode != KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event)
+            if (cardShown) { // Back trên thẻ: ẩn thẻ, không thoát
+                nextDismissed = true
+                nextCard.visibility = View.GONE
+                return true
+            }
             finishWith(SmoothResult.BACK)
             return true
         }
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
+        if (cardShown && event.repeatCount == 0 && (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER)) {
+            playNext()
+            return true
+        }
         when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> if (event.repeatCount == 0) togglePlay()
@@ -457,7 +588,7 @@ class SmoothPlayerActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> seekStep(false, event.repeatCount)
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_MENU -> if (event.repeatCount == 0) openMenu()
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_INFO -> showOsd()
-            KeyEvent.KEYCODE_MEDIA_NEXT -> finishWith(SmoothResult.ENDED)
+            KeyEvent.KEYCODE_MEDIA_NEXT -> playNext()
             KeyEvent.KEYCODE_BACK -> Unit // thoát khi nhả phím (tránh lọt phím Back xuống trang)
             in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> seekToPercent(event.keyCode - KeyEvent.KEYCODE_0)
             else -> return super.dispatchKeyEvent(event)
@@ -467,6 +598,12 @@ class SmoothPlayerActivity : Activity() {
 
     private fun togglePlay() {
         if (player.playbackState == Player.STATE_ENDED) return
+        if (startGate) { // đang chờ đệm → người xem muốn xem ngay
+            startGate = false
+            player.playWhenReady = true
+            showOsd()
+            return
+        }
         if (player.playWhenReady) player.pause() else player.play()
         showOsd(sticky = !player.playWhenReady)
     }
@@ -478,6 +615,7 @@ class SmoothPlayerActivity : Activity() {
         finishing = true
         handler.removeCallbacksAndMessages(null)
         val pos = if (seekFromMs >= 0) seekTargetSec() else player.currentPosition / 1000.0
+        host?.onSmoothPosition(pos, durationSec(), true)
         setResult(
             RESULT_OK,
             Intent().putExtra(EXTRA_RESULT, code).putExtra(EXTRA_POSITION_SEC, pos)
@@ -507,6 +645,8 @@ class SmoothPlayerActivity : Activity() {
         private const val EXTRA_UA = "phim275.smooth.ua"
         private const val EXTRA_START_SEC = "phim275.smooth.start"
         private const val EXTRA_TITLE = "phim275.smooth.title"
+        private const val EXTRA_NEXT_LABEL = "phim275.smooth.next"
+        private const val EXTRA_AUTO_NEXT = "phim275.smooth.autoNext"
         const val EXTRA_RESULT = "phim275.smooth.result"
         const val EXTRA_POSITION_SEC = "phim275.smooth.position"
         const val EXTRA_DURATION_SEC = "phim275.smooth.duration"
@@ -521,10 +661,25 @@ class SmoothPlayerActivity : Activity() {
         private const val SEEK_FLUSH_MS = 400L
         private const val SEEK_LABEL_MS = 700L
         private const val SUBTITLE_LIFT_DP = 120f
+        private const val HEARTBEAT_MS = 1_000L
+        private const val REPORT_MS = 10_000L
+        private const val STABLE_MS = 8_000L
+        private const val STATS_MS = 30_000L
+        private const val MAX_GATE_MS = 8_000L
+        private const val GATE_POLL_MS = 250L
+
+        /** App nhận vị trí xem định kỳ và biết khi nào phim chạy ổn (để giải phóng trang web phía sau). */
+        interface Host {
+            fun onSmoothPosition(positionSec: Double, durationSec: Double, flush: Boolean)
+            fun onSmoothStable()
+        }
+
+        var host: Host? = null
 
         /** Playlist đã chép chuyển sang activity qua bộ nhớ (có thể vài trăm KB — quá lớn cho Intent). */
         private var pendingPlaylists: Map<String, String> = emptyMap()
         private var pendingSubtitles: List<SmoothSubtitle> = emptyList()
+        private var pendingCookies: Map<String, String> = emptyMap()
 
         private fun takePlaylistCopies(): MutableMap<String, ByteArray> {
             val copies = pendingPlaylists.mapValues { it.value.toByteArray() }.toMutableMap()
@@ -533,10 +688,13 @@ class SmoothPlayerActivity : Activity() {
             return copies
         }
 
-        fun intent(context: Context, stream: SmoothStream, title: String?, userAgent: String?): Intent =
+        fun intent(
+            context: Context, stream: SmoothStream, title: String?, userAgent: String?, nextLabel: String?, autoNext: Boolean,
+        ): Intent =
             Intent(context, SmoothPlayerActivity::class.java).also {
                 pendingPlaylists = stream.playlists
                 pendingSubtitles = stream.subtitles
+                pendingCookies = stream.cookies
             }
                 .setData(Uri.parse(stream.url))
                 .putExtra(EXTRA_HLS, stream.isHls)
@@ -545,5 +703,7 @@ class SmoothPlayerActivity : Activity() {
                 .putExtra(EXTRA_UA, stream.userAgent ?: userAgent)
                 .putExtra(EXTRA_START_SEC, stream.positionSec)
                 .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_NEXT_LABEL, nextLabel)
+                .putExtra(EXTRA_AUTO_NEXT, autoNext)
     }
 }

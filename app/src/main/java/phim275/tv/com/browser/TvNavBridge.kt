@@ -32,8 +32,8 @@ object TvNavBridge {
     /** Vị trí video chính đang xem: (URL trang của tab hoặc null, giây hiện tại, độ dài, ghi ngay, đã phát hết). */
     var playbackListener: ((String?, Double, Double, Boolean, Boolean) -> Unit)? = null
 
-    /** Trang xem phim báo tập kế tiếp: (URL trang hoặc null, tên tập — null = không có tập sau). */
-    var nextEpisodeListener: ((String?, String?) -> Unit)? = null
+    /** Trang xem phim báo tập kế tiếp: (URL trang hoặc null, tên tập — null = không có tập sau, link tập kế nếu có). */
+    var nextEpisodeListener: ((String?, String?, String?) -> Unit)? = null
 
     /** Video vừa bắt đầu phát: (URL trang hoặc null, độ dài, giây lúc bắt đầu) → giây cần tua tới, hoặc null = để yên. */
     var resumeProvider: ((String?, Double, Double) -> Double?)? = null
@@ -155,7 +155,8 @@ object TvNavBridge {
             if (json.optString("type") == "nextEp") {
                 val label = if (json.isNull("label")) null else json.optString("label")
                 Log.i(TAG, "Tập tiếp theo: %s (%s)".format(label ?: "không có", page ?: "tab hiện tại"))
-                main.post { nextEpisodeListener?.invoke(page, label) }
+                val href = if (json.isNull("href")) null else json.optString("href").takeIf { it.startsWith("http") }
+                main.post { nextEpisodeListener?.invoke(page, label, href) }
                 return GeckoResult.fromValue(true)
             }
             if (json.optString("type") == "context") {

@@ -111,6 +111,27 @@ class TabManager(
         listener.onTabsChanged()
     }
 
+    /**
+     * Giải phóng trang của tab đang xem (giữ URL) — trình phát mượt đang phát, trang web phía sau không cần trong RAM
+     * (máy chiếu 1,6GB: trang phim + bộ đệm video của nó tốn vài trăm MB). Trả về true nếu đã giải phóng.
+     */
+    fun suspendCurrent(): Boolean {
+        val tab = current ?: return false
+        val session = tab.session ?: return false
+        geckoView.releaseSession()
+        session.close()
+        tab.session = null
+        return true
+    }
+
+    /** Nạp lại tab đang xem sau [suspendCurrent]; [url] = mở thẳng địa chỉ khác (vd. tập kế tiếp). */
+    fun resumeCurrent(url: String? = null) {
+        val tab = current ?: return
+        if (tab.session != null) return
+        if (url != null) tab.url = url
+        select(tab)
+    }
+
     /** Thiếu RAM: giải phóng mọi tab nền. */
     fun discardBackground() = _tabs.filter { it !== current }.forEach(::discard)
 

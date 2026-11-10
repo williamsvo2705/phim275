@@ -80,6 +80,14 @@ class SmoothStreamTest {
     }
 
     @Test
+    fun parsesCookiesPerHost() {
+        val s = SmoothStream.parse(
+            reply("""{"url":"https://cdn.x/a.m3u8","kind":"hls","cookies":{"Stream.CDN.x":"cf_clearance=abc","empty.x":""}}"""),
+        )!!
+        assertEquals(mapOf("stream.cdn.x" to "cf_clearance=abc"), s.cookies)
+    }
+
+    @Test
     fun liveStreamHasNoDuration() {
         val s = SmoothStream.parse(reply("""{"url":"https://x/live.m3u8","kind":"hls"}""", """{"time":12,"duration":0}"""))!!
         assertEquals(0.0, s.durationSec, 0.0)

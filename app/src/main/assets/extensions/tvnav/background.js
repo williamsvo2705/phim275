@@ -28,10 +28,46 @@ let port = null;
 const MAX_STREAMS = 8;
 const streams = new Map();     // tabId → [{ url, kind, frame, referer, origin, ua, at }]
 const sentHeaders = new Map(); // requestId → { referer, origin, ua }
+// Cookie trang trình phát gửi cho từng máy chủ (vd. cf_clearance của Cloudflare — thiếu là 403). Trình phát mượt
+// chỉ gửi lại cookie cho đúng máy chủ đã nhận nó.
+const frameCookies = new Map(); // frame → Map(host → cookie)
 // Nội dung playlist trang đã tải: nhiều trang cấp link playlist dùng một lần (token) → trình phát mượt không xin lại
 // được, nên giữ bản chép nhận được lúc trang tải (theo frame) và gửi kèm cho app.
 const MAX_PLAYLIST_CHARS = 400000;
 const playlists = new Map();   // frame → Map(url → nội dung)
+// hook.js (bắt playlist trang tự giải mã) chỉ chạy ở tên miền trình phát đã gặp playlist tự mã hóa — không chạy
+// trên mọi trang. Gặp tên miền mới → ghi nhớ, từ lần mở trang sau hook có hiệu lực.
+const HOOK_SEED = [ 'streamc.xyz' ]; // Cobephim
+const hookDomains = new Set(HOOK_SEED);
+let hookRegistration = null;
+const baseDomain = host => host.split('.').slice(-2).join('.');
+
+async function registerHook() {
+    if ( !browser.contentScripts ) { return; }
+    try { if ( hookRegistration ) { await hookRegistration.unregister(); } } catch { }
+    hookRegistration = null;
+    const matches = [ ...hookDomains ].flatMap(d => [ `*://${d}/*`, `*://*.${d}/*` ]);
+    try {
+        hookRegistration = await browser.contentScripts.register({
+            matches, js: [ { file: 'hook.js' } ], runAt: 'document_start', allFrames: true,
+        });
+    } catch { }
+}
+
+function rememberHookDomain(frame) {
+    let domain;
+    try { domain = baseDomain(new URL(frame).hostname); } catch { return; }
+    if ( domain === '' || hookDomains.has(domain) ) { return; }
+    hookDomains.add(domain);
+    browser.storage.local.set({ hookDomains: [ ...hookDomains ].slice(-50) }).catch(( ) => {});
+    registerHook();
+}
+
+browser.storage.local.get('hookDomains').then(
+    r => { for ( const d of (r && r.hookDomains) || [] ) { hookDomains.add(d); } registerHook(); },
+    ( ) => registerHook(),
+);
+
 // Playlist trang tự giải mã (hook.js bắt kết quả crypto.subtle.decrypt) — ghép với playlist mã hóa cùng frame.
 const decoded = new Map();     // frame → [nội dung chưa ghép]
 
@@ -92,6 +128,7 @@ function capturePlaylist(d) {
             for ( const s of streams.get(d.tabId) || [] ) {
                 if ( s.url === d.url ) { s.opaque = true; }
             }
+            rememberHookDomain(frame);
             attachDecoded(d.tabId, frame); // trang có thể đã giải mã xong trước khi phản hồi kết thúc
             return;
         }
@@ -131,6 +168,18 @@ if ( browser.webRequest ) {
             origin: header(d.requestHeaders, 'origin'),
             ua: header(d.requestHeaders, 'user-agent'),
         });
+        const cookie = header(d.requestHeaders, 'cookie');
+        if ( cookie !== '' ) {
+            const frame = noHash(d.documentUrl || d.originUrl || '');
+            try {
+                const host = new URL(d.url).hostname;
+                const map = frameCookies.get(frame) || new Map();
+                map.set(host, cookie);
+                while ( map.size > 8 ) { map.delete(map.keys().next().value); }
+                frameCookies.set(frame, map);
+                while ( frameCookies.size > 16 ) { frameCookies.delete(frameCookies.keys().next().value); }
+            } catch { }
+        }
         if ( sentHeaders.size > 300 ) { sentHeaders.delete(sentHeaders.keys().next().value); }
     }, filter, [ 'requestHeaders' ]);
     browser.webRequest.onHeadersReceived.addListener(d => {
@@ -154,6 +203,7 @@ if ( browser.webRequest ) {
         if ( list ) { streams.set(d.tabId, list.filter(s => s.frame !== noHash(d.url))); }
         playlists.delete(noHash(d.url));
         decoded.delete(noHash(d.url));
+        frameCookies.delete(noHash(d.url));
     }, { urls: [ '<all_urls>' ], types: [ 'main_frame', 'sub_frame' ] });
     browser.tabs.onRemoved.addListener(id => { streams.delete(id); });
 }
@@ -191,6 +241,7 @@ async function handlePortMessage(msg) {
             origin,
             referer: found.referer || (origin ? origin + '/' : ''),
             playlists: copies ? Object.fromEntries(copies) : {},
+            cookies: Object.fromEntries(frameCookies.get(found.frame) || []),
         });
         return { ok: true, info: { stream, video: video instanceof Object ? video : null } };
     }

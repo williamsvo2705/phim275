@@ -68,6 +68,11 @@ class AppSettings(context: Context) {
         get() = prefs.getStringSet(KEY_SMOOTH_FAILED, null)?.toSet().orEmpty()
         set(value) = prefs.edit().putStringSet(KEY_SMOOTH_FAILED, value.toSet()).apply()
 
+    /** Phiên bản app lúc ghi danh sách trang lỗi — app cập nhật (có thể đã sửa) → thử lại mọi trang. */
+    var smoothFailedVersion: Int
+        get() = prefs.getInt(KEY_SMOOTH_FAILED_VERSION, 0)
+        set(value) = prefs.edit().putInt(KEY_SMOOTH_FAILED_VERSION, value).apply()
+
     /** Số lần đã nhắc "▼ / Menu: tốc độ, chất lượng" khi vào toàn màn hình (nhắc vài lần đầu). */
     var videoOptionsHints: Int
         get() = prefs.getInt(KEY_VIDEO_HINTS, 0)
@@ -98,6 +103,7 @@ class AppSettings(context: Context) {
         const val KEY_AUTO_NEXT = "auto_next_episode"
         const val KEY_SMOOTH_PLAYER = "smooth_player"
         const val KEY_SMOOTH_FAILED = "smooth_failed_hosts"
+        const val KEY_SMOOTH_FAILED_VERSION = "smooth_failed_version"
         const val KEY_VIDEO_HINTS = "video_options_hints"
         const val KEY_LOW_RAM = "low_ram_mode"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"

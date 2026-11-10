@@ -104,7 +104,7 @@ import phim275.tv.com.update.UpdateInfo
 import phim275.tv.com.update.UpdateManager
 import java.net.URLEncoder
 
-class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener {
+class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener, SmoothPlayerActivity.Companion.Host {
 
     private lateinit var geckoView: GeckoView
     private lateinit var cursorView: CursorView
@@ -148,6 +148,8 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     /** Tập kế tiếp theo trang (URL bỏ #) do extension tvnav tìm thấy; vài trang gần nhất. */
     private val nextEpisodes = LinkedHashMap<String, String>()
+    /** Link tập kế theo trang (nếu trang dùng thẻ <a>) — mở thẳng được kể cả khi trang đã được giải phóng. */
+    private val nextEpisodeHrefs = HashMap<String, String>()
     private var nextCardPage: String? = null      // thẻ "Tập tiếp theo" đang hiện cho trang này
     private var nextCardDismissedFor: String? = null
     private var nextCountdownLeft = 0
@@ -203,8 +205,38 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         }
         beforePanel()
         panel.show(text.ifBlank { "Liên kết" }.take(60), SitePolicy.hostOf(href) ?: href.take(60)) {
-            listOf(PanelSection(null, linkItems(href, text) + PanelItem("Menu trang…", R.drawable.ic_menu) { showMainMenu() }))
+            listOf(PanelSection(null, homeTileItems(href) + linkItems(href, text) + PanelItem("Menu trang…", R.drawable.ic_menu) { showMainMenu() }))
         }
+    }
+
+    /** Giữ OK trên ô của trang chủ: xóa nhanh ô "Xem tiếp" (lịch sử + vị trí đang xem) hoặc ô bookmark. */
+    private fun homeTileItems(href: String): List<PanelItem> {
+        if (currentUrl?.startsWith(HOME_URL) != true) return emptyList()
+        val items = mutableListOf<PanelItem>()
+        val seen = history.all().firstOrNull { it.url == href }
+        if (seen != null) {
+            items += PanelItem("Xóa khỏi Xem tiếp", R.drawable.ic_close) {
+                // Trang chủ gộp các trang cùng tiêu đề (trang phim + trang tập) thành một ô → xóa cả nhóm.
+                val group = history.all().filter { it.url == href || (seen.title.isNotBlank() && it.title == seen.title) }
+                group.forEach {
+                    history.remove(it.url)
+                    playback.remove(it.url)
+                }
+                panel.hide()
+                showToast("Đã xóa \"${seen.title.ifBlank { href }.take(40)}\" khỏi Xem tiếp")
+                currentSession?.loadUri(homeUrl()) // vẽ lại trang chủ
+            }
+        }
+        if (bookmarks.contains(href)) {
+            items += PanelItem("Xóa khỏi bookmark", R.drawable.ic_close) {
+                bookmarks.remove(href)
+                panel.hide()
+                showToast("Đã xóa khỏi bookmark")
+                currentSession?.loadUri(homeUrl())
+                updateBookmarkButton()
+            }
+        }
+        return items
     }
 
     private val currentTab: BrowserTab? get() = tabs.current
@@ -264,6 +296,11 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.playbackListener = ::onPlaybackPosition
         TvNavBridge.resumeProvider = ::resumePositionFor
         TvNavBridge.nextEpisodeListener = ::onNextEpisode
+        SmoothPlayerActivity.host = this
+        if (settings.smoothFailedVersion != BuildConfig.VERSION_CODE) { // bản mới có thể đã phát được các trang từng lỗi
+            settings.smoothFailedHosts = emptySet()
+            settings.smoothFailedVersion = BuildConfig.VERSION_CODE
+        }
 
         // Mở lại các tab lần trước (sau khi cập nhật / Android đóng app vì thiếu RAM).
         val saved = if (settings.restoreTabs) sessionStore.load() else null
@@ -349,6 +386,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         TvNavBridge.playbackListener = null
         TvNavBridge.resumeProvider = null
         TvNavBridge.nextEpisodeListener = null
+        if (SmoothPlayerActivity.host === this) SmoothPlayerActivity.host = null
         handler.removeCallbacks(flushSeek)
         handler.removeCallbacks(nextCountdownTick)
         handler.removeCallbacksAndMessages(null)
@@ -575,10 +613,17 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
         override fun onLoadRequest(session: GeckoSession, request: NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
             val uri = request.uri
-            // Lệnh nội bộ từ trang chủ: phim275://search, phim275://update.
+            // Lệnh nội bộ từ trang chủ: phim275://search, phim275://update, phim275://context?href=…&text=… (giữ OK trên ô).
             if (uri.startsWith("phim275:")) {
                 handler.post {
-                    if (uri.contains("update")) checkForUpdates(silent = false) else showTextEntryDialog(forPage = false)
+                    when {
+                        uri.startsWith("phim275://context") -> {
+                            val q = Uri.parse(uri)
+                            onBlockContext(q.getQueryParameter("href")?.takeIf { it.isNotBlank() }, q.getQueryParameter("text").orEmpty(), q.getQueryParameter("media") == "1")
+                        }
+                        uri.contains("update") -> checkForUpdates(silent = false)
+                        else -> showTextEntryDialog(forPage = false)
+                    }
                 }
                 return GeckoResult.deny()
             }
@@ -622,10 +667,16 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         override fun onPageStop(session: GeckoSession, success: Boolean) {
             if (!tabs.isCurrent(session)) return
             progress.visibility = View.GONE
-            resumeAfterKill?.let { fs ->
+            // Trang mới tạo lại nạp about:blank trước → chỉ xử lý khi trang thật (http/https) tải xong.
+            val realPage = currentUrl?.startsWith("http") == true
+            if (realPage) resumeAfterKill?.let { fs ->
                 resumeAfterKill = null
                 // tvnav: F11 = tự phát lại, F12 = tự phát + toàn màn hình (vị trí cũ do "Xem tiếp đúng chỗ" tua tới).
                 if (success) handler.postDelayed({ sendKeyToPage(if (fs) KeyEvent.KEYCODE_F12 else KeyEvent.KEYCODE_F11, 0) }, 600)
+            }
+            if (pendingNextAfterLoad && success && realPage) {
+                pendingNextAfterLoad = false
+                handler.postDelayed({ sendKeyToPage(KeyEvent.KEYCODE_F8, 0) }, NEXT_AFTER_LOAD_MS)
             }
             if (pageStartMs > 0) diagnostics.lastPageLoadMs = SystemClock.uptimeMillis() - pageStartMs
             saveSession() // phòng khi Android đóng app đột ngột vì thiếu RAM
@@ -1377,6 +1428,15 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     // ───────────────────────────── Trình phát mượt ─────────────────────────────
 
+    /** Trang web phía sau trình phát mượt đã được giải phóng (máy ít RAM) → nạp lại khi quay về. */
+    private var smoothSuspended = false
+    /** Sau "Dùng trình phát của trang" (trang được nạp lại): không tự mở lại trình phát mượt một lúc. */
+    private var smoothSuppressUntilMs = 0L
+    /** Đang chuyển sang tập kế từ trình phát mượt: thử bắt luồng lâu hơn (trang tập mới còn đang tải). */
+    private var smoothAwaitNextUntilMs = 0L
+    private var pendingNextAfterLoad = false
+    private var smoothTransition: TextView? = null
+
     /** Vị trí video web lúc chuyển sang trình phát mượt (web dừng ở đó) — để tua web cho khớp khi quay lại. */
     private var smoothWebSec = 0.0
     private var smoothPage: String? = null
@@ -1390,6 +1450,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private fun maybeOpenSmoothPlayer(force: Boolean = false, attempt: Int = 0) {
         if (!force && !settings.smoothPlayer) return
         if (!force && SystemClock.uptimeMillis() - smoothReturnedAtMs < SMOOTH_COOLDOWN_MS) return
+        if (!force && SystemClock.uptimeMillis() < smoothSuppressUntilMs) return
         if (smoothPage != null) return // đang mở
         val page = currentUrl ?: return
         if (!force && Uri.parse(page).host.orEmpty() in settings.smoothFailedHosts) return
@@ -1398,8 +1459,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             if (stream == null) {
                 if (force) {
                     showToast("Chưa thấy luồng video của trang · cho phim chạy vài giây rồi thử lại")
-                } else if (attempt < SMOOTH_RETRIES && isAnyFullscreen()) {
+                } else if (attempt < (if (awaitingSmoothNext()) SMOOTH_NEXT_RETRIES else SMOOTH_RETRIES) && isAnyFullscreen()) {
                     handler.postDelayed({ maybeOpenSmoothPlayer(false, attempt + 1) }, SMOOTH_RETRY_MS)
+                } else {
+                    hideSmoothTransition()
                 }
                 return@stream
             }
@@ -1409,11 +1472,36 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             TvNavBridge.video("pause") {}
             smoothWebSec = stream.positionSec
             smoothPage = page
+            smoothAwaitNextUntilMs = 0
+            val key = PlaybackCodec.key(page)
             @Suppress("DEPRECATION")
             startActivityForResult(
-                SmoothPlayerActivity.intent(this, stream, currentTab?.title?.takeIf { it.isNotBlank() } ?: Uri.parse(page).host, GeckoSession.getDefaultUserAgent()),
+                SmoothPlayerActivity.intent(
+                    this, stream, currentTab?.title?.takeIf { it.isNotBlank() } ?: Uri.parse(page).host,
+                    GeckoSession.getDefaultUserAgent(), nextEpisodes[key], settings.autoNextEpisode,
+                ),
                 REQ_SMOOTH,
             )
+            handler.postDelayed(::hideSmoothTransition, SMOOTH_TRANSITION_HIDE_MS)
+        }
+    }
+
+    /** Vị trí xem từ trình phát mượt (mỗi ~10 giây, khi dừng / thoát) → "Xem tiếp đúng chỗ". */
+    override fun onSmoothPosition(positionSec: Double, durationSec: Double, flush: Boolean) {
+        val page = smoothPage ?: return
+        if (durationSec > 0 && LinkStore.isRecordable(page)) playback.record(page, positionSec, durationSec, flush)
+    }
+
+    /** Trình phát mượt đã chạy ổn: máy ít RAM → giải phóng trang web phía sau (nạp lại khi quay về). */
+    override fun onSmoothStable() {
+        val page = smoothPage ?: return
+        if (smoothSuspended || currentUrl != page || DeviceProfile.totalRamBytes(this) >= SMOOTH_SUSPEND_RAM_BYTES) return
+        if (tabs.suspendCurrent()) {
+            smoothSuspended = true
+            // Trang đóng giữa lúc toàn màn hình → Gecko không báo thoát nữa: tự xóa trạng thái (trang sẽ nạp lại).
+            fullScreen = false
+            pseudoFullscreen = false
+            android.util.Log.i("Phim275Smooth", "Đã giải phóng trang web phía sau trình phát mượt")
         }
     }
 
@@ -1421,37 +1509,109 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         smoothReturnedAtMs = SystemClock.uptimeMillis()
         val page = smoothPage ?: return
         smoothPage = null
+        val suspended = smoothSuspended
+        smoothSuspended = false
         val code = data?.getIntExtra(SmoothPlayerActivity.EXTRA_RESULT, SmoothResult.BACK) ?: SmoothResult.BACK
         val pos = data?.getDoubleExtra(SmoothPlayerActivity.EXTRA_POSITION_SEC, smoothWebSec) ?: smoothWebSec
         val dur = data?.getDoubleExtra(SmoothPlayerActivity.EXTRA_DURATION_SEC, 0.0) ?: 0.0
-        if (currentUrl != page) return // đã đổi tab / trang trong lúc xem
+        if (currentUrl != page) { // đã đổi tab / trang trong lúc xem
+            if (suspended) tabs.resumeCurrent()
+            return
+        }
         if (dur > 0 && LinkStore.isRecordable(page)) playback.record(page, pos, dur, true)
         val delta = SmoothResult.seekDelta(smoothWebSec, pos)
+        val now = SystemClock.uptimeMillis()
         when (code) {
+            SmoothResult.NEXT -> openNextFromSmooth(page, suspended)
             SmoothResult.ENDED -> {
-                exitAnyFullscreen()
-                onPlaybackPosition(page, dur, dur, flush = true, ended = true) // thẻ "Tập tiếp theo", tự chuyển tập
+                if (suspended) tabs.resumeCurrent() else exitAnyFullscreen()
+                onPlaybackPosition(page, dur, dur, flush = true, ended = true) // thẻ "Tập tiếp theo" (nếu có)
             }
             SmoothResult.USE_WEB, SmoothResult.ERROR -> {
                 if (code == SmoothResult.ERROR) {
                     settings.smoothFailedHosts = settings.smoothFailedHosts + Uri.parse(page).host.orEmpty()
                     showToast("Trình phát mượt không phát được trang này · dùng trình phát của trang")
                 }
-                TvNavBridge.video("seekBy", delta) { TvNavBridge.video("play") {} }
+                if (suspended) { // trang đã được giải phóng → nạp lại, tự phát toàn màn hình, tua về chỗ vừa xem
+                    smoothSuppressUntilMs = now + SMOOTH_SUPPRESS_MS
+                    forceResumeUntilMs = now + FORCE_RESUME_WINDOW_MS * 2
+                    resumeAfterKill = true
+                    tabs.resumeCurrent()
+                } else {
+                    TvNavBridge.video("seekBy", delta) { TvNavBridge.video("play") {} }
+                }
             }
             else -> { // Back: về trang, dừng ở chỗ vừa xem
-                TvNavBridge.video("seekBy", delta) {}
-                exitAnyFullscreen()
+                if (suspended) {
+                    forceResumeUntilMs = now + BACK_RESUME_WINDOW_MS // bấm phát lại → tua tới chỗ vừa xem
+                    tabs.resumeCurrent()
+                } else {
+                    TvNavBridge.video("seekBy", delta) {}
+                    exitAnyFullscreen()
+                }
             }
         }
+    }
+
+    /** Trình phát mượt hết tập: mở tập kế (tự phát + toàn màn hình → trình phát mượt mở lại), che màn hình chờ. */
+    private fun openNextFromSmooth(page: String, suspended: Boolean) {
+        val key = PlaybackCodec.key(page)
+        val label = nextEpisodes[key] ?: "tập tiếp theo"
+        nextCardDismissedFor = key
+        hideNextCard()
+        nextRequestedAtMs = SystemClock.uptimeMillis()
+        smoothReturnedAtMs = 0
+        smoothAwaitNextUntilMs = SystemClock.uptimeMillis() + SMOOTH_NEXT_WINDOW_MS
+        showSmoothTransition("⏭ Đang mở $label…")
+        val href = nextEpisodeHrefs[key]
+        when {
+            suspended && href != null -> {
+                resumeAfterKill = true // tvnav F12: tự phát + toàn màn hình
+                tabs.resumeCurrent(href)
+            }
+            suspended -> {
+                pendingNextAfterLoad = true
+                tabs.resumeCurrent()
+            }
+            else -> sendKeyToPage(KeyEvent.KEYCODE_F8, 0)
+        }
+    }
+
+    private fun awaitingSmoothNext() = SystemClock.uptimeMillis() < smoothAwaitNextUntilMs
+
+    /** Màn hình đen "Đang mở tập…" che trang trong lúc chuyển tập giữa hai lần trình phát mượt. */
+    private fun showSmoothTransition(text: String) {
+        val root = findViewById<ViewGroup>(R.id.root)
+        val view = smoothTransition ?: TextView(this).apply {
+            setBackgroundColor(0xFF000000.toInt())
+            setTextColor(getColor(R.color.text))
+            textSize = 22f
+            gravity = android.view.Gravity.CENTER
+            elevation = dp(30f)
+        }.also {
+            smoothTransition = it
+            root.addView(it, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        view.text = text
+        view.visibility = View.VISIBLE
+        handler.removeCallbacks(transitionTimeout)
+        handler.postDelayed(transitionTimeout, SMOOTH_NEXT_WINDOW_MS)
+    }
+
+    private val transitionTimeout = Runnable { hideSmoothTransition() }
+
+    private fun hideSmoothTransition() {
+        handler.removeCallbacks(transitionTimeout)
+        smoothTransition?.visibility = View.GONE
     }
 
     // ───────────────────────────── Tập tiếp theo ─────────────────────────────
 
     /** Trang xem phim báo tập kế tiếp (null = không có / không mở được). */
-    private fun onNextEpisode(page: String?, label: String?) {
+    private fun onNextEpisode(page: String?, label: String?, href: String?) {
         val url = page ?: currentUrl ?: return
         val key = PlaybackCodec.key(url)
+        if (href != null && label != null) nextEpisodeHrefs[key] = href else nextEpisodeHrefs.remove(key)
         if (label == null) {
             nextEpisodes.remove(key)
             if (nextCardPage == key) hideNextCard()
@@ -2232,6 +2392,14 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val SMOOTH_RETRIES = 4
         private const val SMOOTH_RETRY_MS = 1_500L
         private const val SMOOTH_COOLDOWN_MS = 4_000L
+        private const val SMOOTH_NEXT_RETRIES = 20
+        private const val SMOOTH_NEXT_WINDOW_MS = 45_000L
+        private const val SMOOTH_TRANSITION_HIDE_MS = 1_500L
+        private const val SMOOTH_SUPPRESS_MS = 120_000L
+        private const val BACK_RESUME_WINDOW_MS = 600_000L
+        private const val NEXT_AFTER_LOAD_MS = 3_000L
+        /** Máy dưới mức RAM này: giải phóng trang web khi xem bằng trình phát mượt. */
+        private const val SMOOTH_SUSPEND_RAM_BYTES = 3L * 1024 * 1024 * 1024
         private const val IME_CHECK_MS = 700L
         private const val DOUBLE_PRESS_MS = 450L
         private const val BLOCK_MENU_TIMEOUT_MS = 600L

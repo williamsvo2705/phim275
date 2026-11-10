@@ -159,6 +159,53 @@
             android:orientation="vertical" />
     </LinearLayout>
 
+    <!-- Thẻ "Tập tiếp theo" gần cuối phim (giống thẻ trên trang) -->
+    <LinearLayout
+        android:id="@+id/player_next"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="40dp"
+        android:layout_marginBottom="150dp"
+        android:background="@drawable/next_card_bg"
+        android:minWidth="300dp"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="14dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.12"
+            android:text="⏭  TẬP TIẾP THEO"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/text_caption"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/player_next_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxWidth="440dp"
+            android:maxLines="1"
+            android:textColor="@color/text"
+            android:textSize="@dimen/text_display"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/player_next_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/text_dim"
+            android:textSize="@dimen/text_body" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/player_toast"
         android:layout_width="wrap_content"

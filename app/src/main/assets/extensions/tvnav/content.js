@@ -17,7 +17,7 @@
     if ( window.__phim275TvNav ) { return; }
     window.__phim275TvNav = true;
 
-    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F9', 'F10', 'F11', 'F12' ]);
+    const NAV_KEYS = new Set([ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'F8', 'F9', 'F10', 'F11', 'F12' ]);
     const FORWARD_TAG = 'phim275-tvnav-key';
     // Hộp thoại bên trong iframe trình phát ("Tiếp tục xem / Xem lại từ đầu"…): iframe báo trạng thái,
     // trang chính chuyển phím vào để chọn nút.
@@ -749,7 +749,15 @@
     }
 
     function notifyApp(msg) {
-        if ( typeof browser === 'undefined' || !browser.runtime ) { return; }
+        if ( typeof browser === 'undefined' || !browser.runtime ) {
+            // Trang chủ của app (resource://, nạp content.js như script thường, không có API extension):
+            // giữ OK trên một ô → báo app qua lệnh phim275://context (app chặn điều hướng, hiện menu của ô).
+            if ( location.protocol === 'resource:' && isObj(msg) && msg.type === 'context' ) {
+                location.href = 'phim275://context?href=' + encodeURIComponent(msg.href || '') +
+                    '&text=' + encodeURIComponent(msg.text || '') + '&media=' + (msg.media ? '1' : '0');
+            }
+            return;
+        }
         browser.runtime.sendMessage(msg).catch(( ) => {});
     }
 
@@ -852,7 +860,9 @@
     /** Xử lý một phím; trả về true nếu đã dùng phím (để chặn hành vi mặc định của trang). */
     function handleKey(key) {
         if ( key === 'F9' ) { return requestBlockMenu(); }
-        if ( key === NEXT_KEY ) { goNextEpisode(); return true; }
+        if ( key === NEXT_KEY ) { goNextEpisode(false); return true; }
+        // F8: app (trình phát mượt vừa hết tập) mở tập kế — tập mới tự phát + toàn màn hình để mở lại trình phát mượt.
+        if ( key === 'F8' ) { goNextEpisode(true); return true; }
         if ( key === 'F11' || key === 'F12' ) { // trang vừa được tải lại sau khi bị đóng giữa phim
             autoplay = { t: Date.now(), fs: key === 'F12' };
             scheduleAutoplay();
@@ -1029,7 +1039,9 @@
         if ( key === nextSent || (label === null && nextLabel === null) ) { return; }
         nextSent = key;
         nextLabel = label;
-        notifyApp({ type: 'nextEp', label, top: location.href });
+        // Link tập kế (nếu là thẻ <a>): app mở thẳng được kể cả khi đã giải phóng trang lúc xem bằng trình phát mượt.
+        const href = found !== null && found.el.tagName === 'A' && /^https?:/.test(found.el.href) ? found.el.href : null;
+        notifyApp({ type: 'nextEp', label, href, top: location.href });
     }
 
     function scheduleNextCheck() {
@@ -1039,7 +1051,7 @@
     // Trình phát nạp muộn (sau khi bấm "Xem phim") → kiểm tra lại khi video bắt đầu phát.
     addEventListener('playing', ( ) => { if ( nextLabel === null ) { reportNextEpisode(); } }, true);
 
-    function goNextEpisode() {
+    function goNextEpisode(forceFullscreen) {
         const found = findNextEpisode();
         if ( found === null ) {
             nextSent = '';
@@ -1047,7 +1059,7 @@
             return;
         }
         // Tập mới tự phát; đang toàn màn hình thì tập mới cũng toàn màn hình.
-        autoplay = { t: Date.now(), fs: isFullscreen() };
+        autoplay = { t: Date.now(), fs: forceFullscreen === true || isFullscreen() };
         try { sessionStorage.setItem(AUTOPLAY_KEY, JSON.stringify(autoplay)); } catch { }
         if ( pseudoFull !== null ) { setPseudoFullscreen(null, false); }
         const el = found.el;
@@ -1108,11 +1120,45 @@
         });
     }
 
+    /**
+     * Trang vừa nạp mới thường chưa có trình phát, chỉ có ảnh bìa + nút ▶ to giữa khung 16:9 (vd. Cobephim):
+     * khung lớn nhất có tỉ lệ ~16:9 nằm ở nửa trên trang → chạm vào giữa nó như người xem bấm ▶.
+     */
+    function findPosterBox() {
+        const vw = innerWidth, vh = innerHeight;
+        let best = null, bestArea = 0;
+        for ( const el of document.querySelectorAll('div, section, figure, a, button') ) {
+            const r = el.getBoundingClientRect();
+            if ( r.width < vw * 0.5 || r.height < 120 || r.top > vh * 0.6 || r.bottom < 0 ) { continue; }
+            const ratio = r.width / r.height;
+            if ( ratio < 1.4 || ratio > 2.4 ) { continue; }
+            const area = r.width * r.height;
+            if ( area < bestArea ) { continue; }
+            const cs = getComputedStyle(el);
+            if ( cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0' ) { continue; }
+            // Cùng kích thước với khung cha → giữ khung trong cùng (gần nút ▶ hơn).
+            if ( area === bestArea && best !== null && !best.contains(el) ) { continue; }
+            best = el;
+            bestArea = area;
+        }
+        return best;
+    }
+
     function tryAutoplay() {
         if ( autoplay === null ) { return; }
         if ( Date.now() - autoplay.t > AUTOPLAY_WINDOW_MS ) { autoplay = null; return; }
         const player = findPlayer();
-        if ( player === null ) { return; }
+        if ( player === null ) {
+            // Chưa có trình phát: chạm ảnh bìa (nút ▶) một lần để trang dựng trình phát.
+            if ( autoplay.posterTapped || document.readyState !== 'complete' ) { return; }
+            const poster = findPosterBox();
+            if ( poster === null ) { return; }
+            autoplay.posterTapped = true;
+            autoplay.lastTap = Date.now();
+            select(poster);
+            activate();
+            return;
+        }
         playerState(player).then(st => {
             if ( autoplay === null ) { return; }
             if ( st.playing ) {

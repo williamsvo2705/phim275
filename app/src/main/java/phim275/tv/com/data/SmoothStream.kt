@@ -21,6 +21,8 @@ data class SmoothStream(
     val hasSubtitles: Boolean = false,
     /** File phụ đề rời của trang (WebVTT / SRT) — trình phát mượt tải và hiện lại. */
     val subtitles: List<SmoothSubtitle> = emptyList(),
+    /** Cookie trang đã gửi theo máy chủ (host → cookie, vd. cf_clearance): chỉ gửi lại đúng máy chủ đó. */
+    val cookies: Map<String, String> = emptyMap(),
 ) {
     companion object {
         /** Trả lời của tvnav cho `{ type: 'stream' }`: `{ stream: { url, kind, referer, origin, ua }, video: { time, duration } }`. */
@@ -43,6 +45,9 @@ data class SmoothStream(
                     o.keys().asSequence().mapNotNull { k -> o.optString(k).takeIf { it.startsWith("#EXTM3U") }?.let { k to it } }.toMap()
                 }.orEmpty(),
                 subtitles = parseSubtitles(video),
+                cookies = s.optJSONObject("cookies")?.let { o ->
+                    o.keys().asSequence().mapNotNull { k -> o.optString(k).takeIf { it.isNotBlank() }?.let { k.lowercase() to it } }.toMap()
+                }.orEmpty(),
                 hasSubtitles = (video?.optInt("subs", 0) ?: 0) > 0 && parseSubtitles(video).isEmpty(),
             )
         }
@@ -77,6 +82,12 @@ object SmoothResult {
     const val USE_WEB = 2
     /** Không phát được luồng: quay lại trình phát web, không thử lại trên trang này. */
     const val ERROR = 3
+    /** Hết phim (hoặc chọn "xem ngay" trên thẻ) và trang có tập kế: mở tập kế, rồi mở lại trình phát mượt. */
+    const val NEXT = 4
+
+    /** Video cao hơn mức này (vd. 4K) cần tải trước nhiều hơn rồi mới phát để bộ giải mã kịp chạy đều. */
+    const val HIGH_RES_HEIGHT = 1440
+    fun prebufferMs(videoHeight: Int): Long = if (videoHeight > HIGH_RES_HEIGHT) 6_000L else 0L
 
     /** Số giây cần tua video web để khớp vị trí trình phát mượt vừa dừng (web đứng yên tại [webSec] lúc chuyển). */
     fun seekDelta(webSec: Double, smoothSec: Double): Double = smoothSec - webSec

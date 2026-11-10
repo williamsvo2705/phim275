@@ -78,6 +78,9 @@ object BrowserRuntime {
         "network.predictor.enabled" to "false",
         "network.prefetch-next" to "false",
         "network.http.speculative-parallel-limit" to "0",
+        // Trang cuối cùng của process nội dung đóng (vd. giải phóng trang khi xem bằng trình phát mượt) → tắt luôn
+        // process đó (~150MB trên máy chiếu) thay vì giữ sẵn chờ dùng lại.
+        "dom.ipc.keepProcessesAlive.web" to "0",
     )
 
     /** Chế độ RAM thấp (TV box 1GB): đè lên LOW_MEMORY_PREFS. */
@@ -113,7 +116,7 @@ object BrowserRuntime {
         }
     }
 
-    private val EXTRA_PREF_LINE = Regex("""([a-z0-9_.\-]+):\s*(-?\d+|true|false|"[^"]*")""")
+    private val EXTRA_PREF_LINE = Regex("""([A-Za-z0-9_.\-]+):\s*(-?\d+|true|false|"[^"]*")""")
 
     private fun writeGeckoConfig(appContext: Context, lowRam: Boolean): String {
         val prefs = (if (lowRam) LOW_MEMORY_PREFS + TINY_RAM_PREFS else LOW_MEMORY_PREFS) + extraPrefs(appContext)
