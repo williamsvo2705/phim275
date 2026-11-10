@@ -139,6 +139,35 @@
             const s = v.currentSrc || '';
             return /^https?:/.test(s) ? s : '';
         }
+        /** File phụ đề rời của video (JW Player tracks / thẻ <track>) để trình phát mượt hiện lại; on = đang bật. */
+        function subtitleTracks(v) {
+            const out = [];
+            const abs = u => { try { return new URL(u, location.href).href; } catch { return ''; } };
+            const p = jw();
+            if ( p !== null ) {
+                try {
+                    const it = p.getPlaylistItem() || {};
+                    const list = Array.from(p.getCaptionsList() || []); // [Off, …]
+                    const cur = Number(p.getCurrentCaptions()) || 0;
+                    const curLabel = cur > 0 && list[cur] ? String(list[cur].label || '') : '';
+                    for ( const t of Array.from(it.tracks || []) ) {
+                        if ( t.kind !== 'captions' && t.kind !== 'subtitles' ) { continue; }
+                        const url = abs(String(t.file || ''));
+                        if ( !/^https?:/.test(url) ) { continue; }
+                        const label = String(t.label || '');
+                        out.push({ url, label, lang: String(t.language || ''), on: curLabel !== '' ? label === curLabel : t.default === true });
+                    }
+                } catch { }
+            }
+            if ( out.length === 0 ) {
+                for ( const t of v.querySelectorAll('track') ) {
+                    const url = abs(t.src || '');
+                    if ( !/^https?:/.test(url) || (t.kind && t.kind !== 'subtitles' && t.kind !== 'captions') ) { continue; }
+                    out.push({ url, label: t.label || t.srclang || '', lang: t.srclang || '', on: t.track ? t.track.mode === 'showing' : t.default });
+                }
+            }
+            return out.slice(0, 12);
+        }
         /** Số phụ đề rời đang hiện (trình phát mượt không hiện được phụ đề của trang). */
         function subtitlesShown(v) {
             let n = 0;
@@ -150,7 +179,7 @@
         function info(v) {
             const out = { engine: 'html5', rate: v.playbackRate, levels: [], level: -1, height: v.videoHeight || 0,
                 time: v.currentTime, duration: Number.isFinite(v.duration) ? v.duration : 0,
-                paused: v.paused, frame: location.href.split('#')[0], src: mediaSrc(v), subs: subtitlesShown(v) };
+                paused: v.paused, frame: location.href.split('#')[0], src: mediaSrc(v), subs: subtitlesShown(v), subtitles: subtitleTracks(v) };
             const p = jw();
             if ( p !== null ) {
                 try {

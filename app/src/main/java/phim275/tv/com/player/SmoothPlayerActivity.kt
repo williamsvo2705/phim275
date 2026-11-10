@@ -28,6 +28,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
@@ -42,6 +43,7 @@ import phim275.tv.com.data.PlayerOptions
 import phim275.tv.com.data.SeekPolicy
 import phim275.tv.com.data.SmoothResult
 import phim275.tv.com.data.SmoothStream
+import phim275.tv.com.data.SmoothSubtitle
 
 /**
  * Trình phát mượt: phát luồng của trang (HLS / file video) bằng ExoPlayer trên SurfaceView.
@@ -67,6 +69,7 @@ class SmoothPlayerActivity : Activity() {
     private lateinit var menuTitle: TextView
     private lateinit var menuItems: LinearLayout
     private lateinit var toast: TextView
+    private lateinit var subtitle: TextView
 
     private var started = false       // đã hiện khung hình đầu tiên
     private var retried = false       // đã thử nạp lại một lần sau lỗi mạng giữa chừng
@@ -91,6 +94,7 @@ class SmoothPlayerActivity : Activity() {
         menuTitle = findViewById(R.id.player_menu_title)
         menuItems = findViewById(R.id.player_menu_items)
         toast = findViewById(R.id.player_toast)
+        subtitle = findViewById(R.id.player_subtitle)
 
         val url = intent.dataString
         if (url == null) {
@@ -98,11 +102,14 @@ class SmoothPlayerActivity : Activity() {
             return
         }
         title.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        val subtitles = pendingSubtitles
+        pendingSubtitles = emptyList()
         player = buildPlayer()
         player.setVideoSurfaceView(surface)
         val item = MediaItem.Builder().setUri(Uri.parse(url))
             // Playlist nhiều trang không có đuôi .m3u8 (vd. https://embed…/eyJ0…) → báo rõ là HLS.
             .apply { if (intent.getBooleanExtra(EXTRA_HLS, false)) setMimeType(MimeTypes.APPLICATION_M3U8) }
+            .setSubtitleConfigurations(subtitles.map(::subtitleConfig))
             .build()
         player.setMediaItem(item, (intent.getDoubleExtra(EXTRA_START_SEC, 0.0) * 1000).toLong())
         player.prepare()
@@ -165,6 +172,12 @@ class SmoothPlayerActivity : Activity() {
 
         override fun onVideoSizeChanged(videoSize: VideoSize) = fitVideo(videoSize)
 
+        override fun onCues(cueGroup: CueGroup) {
+            val text = cueGroup.cues.mapNotNull { it.text }.joinToString("\n")
+            subtitle.text = text
+            subtitle.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             val failed = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.dataSpec?.uri
             Log.w(TAG, "Lỗi phát (${error.errorCodeName}): ${error.cause}${failed?.let { " · ${it.toString().take(160)}" }.orEmpty()}")
@@ -197,7 +210,10 @@ class SmoothPlayerActivity : Activity() {
         }
     }
 
-    private val hideOsd = Runnable { osd.visibility = View.GONE }
+    private val hideOsd = Runnable {
+        osd.visibility = View.GONE
+        subtitle.animate().translationY(0f).setDuration(150).start()
+    }
     private val tick = object : Runnable {
         override fun run() {
             updateOsd()
@@ -207,6 +223,7 @@ class SmoothPlayerActivity : Activity() {
 
     private fun showOsd(sticky: Boolean = false) {
         osd.visibility = View.VISIBLE
+        subtitle.animate().translationY(-SUBTITLE_LIFT_DP * resources.displayMetrics.density).setDuration(150).start()
         handler.removeCallbacks(hideOsd)
         handler.removeCallbacks(tick)
         handler.post(tick)
@@ -294,6 +311,7 @@ class SmoothPlayerActivity : Activity() {
             else -> current ?: "—"
         }
         addRow("Chất lượng", quality) { if (tracks.size > 1) openQualityMenu() }
+        if (textTracks().isNotEmpty()) addRow("Phụ đề", currentSubtitleLabel() ?: "Tắt") { openSubtitleMenu() }
         addRow("Dùng trình phát của trang", "nếu phụ đề / âm thanh lỗi") { finishWith(SmoothResult.USE_WEB) }
         showMenu()
     }
@@ -336,6 +354,51 @@ class SmoothPlayerActivity : Activity() {
         }
         showMenu()
     }
+
+    private fun openSubtitleMenu() {
+        menuLevel = ::openMenu
+        menuTitle.text = "Phụ đề"
+        menuItems.removeAllViews()
+        val current = currentSubtitleLabel()
+        addRow("Tắt", if (current == null) "✓" else null, focus = current == null) {
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            hideMenu()
+            showToast("Đã tắt phụ đề")
+        }
+        textTracks().forEach { (override, format) ->
+            val label = subtitleLabel(format)
+            addRow(label, if (label == current) "✓" else null, focus = label == current) {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(override).build()
+                hideMenu()
+                showToast("Phụ đề: $label")
+            }
+        }
+        showMenu()
+    }
+
+    private fun textTracks(): List<Pair<TrackSelectionOverride, Format>> =
+        player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.flatMap { group ->
+            (0 until group.length).filter { group.isTrackSupported(it) }
+                .map { TrackSelectionOverride(group.mediaTrackGroup, it) to group.getTrackFormat(it) }
+        }
+
+    private fun currentSubtitleLabel(): String? =
+        player.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.let { group ->
+            (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { subtitleLabel(group.getTrackFormat(it)) }
+        }
+
+    private fun subtitleLabel(f: Format) = f.label ?: f.language ?: "Phụ đề"
+
+    /** Phụ đề trang đang bật → chọn sẵn (cờ DEFAULT); các phụ đề khác chọn được trong bảng ▼. */
+    private fun subtitleConfig(sub: SmoothSubtitle): MediaItem.SubtitleConfiguration =
+        MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.url))
+            .setMimeType(if (sub.isSrt) MimeTypes.APPLICATION_SUBRIP else MimeTypes.TEXT_VTT)
+            .setLabel(sub.label)
+            .setLanguage(sub.language)
+            .setSelectionFlags(if (sub.on) C.SELECTION_FLAG_DEFAULT else 0)
+            .build()
 
     private fun qualityLabel(f: Format) = if (f.height > 0) "${f.height}p" else "${f.bitrate / 1000} kbps"
 
@@ -457,9 +520,11 @@ class SmoothPlayerActivity : Activity() {
         private const val TOAST_MS = 2_500L
         private const val SEEK_FLUSH_MS = 400L
         private const val SEEK_LABEL_MS = 700L
+        private const val SUBTITLE_LIFT_DP = 120f
 
         /** Playlist đã chép chuyển sang activity qua bộ nhớ (có thể vài trăm KB — quá lớn cho Intent). */
         private var pendingPlaylists: Map<String, String> = emptyMap()
+        private var pendingSubtitles: List<SmoothSubtitle> = emptyList()
 
         private fun takePlaylistCopies(): MutableMap<String, ByteArray> {
             val copies = pendingPlaylists.mapValues { it.value.toByteArray() }.toMutableMap()
@@ -469,7 +534,10 @@ class SmoothPlayerActivity : Activity() {
         }
 
         fun intent(context: Context, stream: SmoothStream, title: String?, userAgent: String?): Intent =
-            Intent(context, SmoothPlayerActivity::class.java).also { pendingPlaylists = stream.playlists }
+            Intent(context, SmoothPlayerActivity::class.java).also {
+                pendingPlaylists = stream.playlists
+                pendingSubtitles = stream.subtitles
+            }
                 .setData(Uri.parse(stream.url))
                 .putExtra(EXTRA_HLS, stream.isHls)
                 .putExtra(EXTRA_REFERER, stream.referer)

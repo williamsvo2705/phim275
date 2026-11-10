@@ -17,8 +17,10 @@ data class SmoothStream(
     val durationSec: Double,
     /** Bản chép các playlist trang đã tải (URL → nội dung): link playlist dùng một lần thì không xin lại được. */
     val playlists: Map<String, String> = emptyMap(),
-    /** Trang đang hiện phụ đề rời (WebVTT…) — trình phát mượt không hiện được → không tự chuyển. */
+    /** Trang đang hiện phụ đề mà trình phát mượt không lấy được file → không tự chuyển (giữ phụ đề của trang). */
     val hasSubtitles: Boolean = false,
+    /** File phụ đề rời của trang (WebVTT / SRT) — trình phát mượt tải và hiện lại. */
+    val subtitles: List<SmoothSubtitle> = emptyList(),
 ) {
     companion object {
         /** Trả lời của tvnav cho `{ type: 'stream' }`: `{ stream: { url, kind, referer, origin, ua }, video: { time, duration } }`. */
@@ -40,12 +42,29 @@ data class SmoothStream(
                 playlists = s.optJSONObject("playlists")?.let { o ->
                     o.keys().asSequence().mapNotNull { k -> o.optString(k).takeIf { it.startsWith("#EXTM3U") }?.let { k to it } }.toMap()
                 }.orEmpty(),
-                hasSubtitles = (video?.optInt("subs", 0) ?: 0) > 0,
+                subtitles = parseSubtitles(video),
+                hasSubtitles = (video?.optInt("subs", 0) ?: 0) > 0 && parseSubtitles(video).isEmpty(),
             )
+        }
+
+        private fun parseSubtitles(video: JSONObject?): List<SmoothSubtitle> {
+            val list = video?.optJSONArray("subtitles") ?: return emptyList()
+            return (0 until list.length()).mapNotNull { i ->
+                val o = list.optJSONObject(i) ?: return@mapNotNull null
+                val url = o.optString("url")
+                if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
+                SmoothSubtitle(url, o.text("label") ?: o.text("lang") ?: "Phụ đề ${i + 1}", o.text("lang"), o.optBoolean("on"))
+            }.distinctBy { it.url }
         }
 
         private fun JSONObject.text(key: String): String? = optString(key).takeIf { it.isNotBlank() && it != "null" }
     }
+}
+
+/** Một file phụ đề của trang. [on] = đang bật trên trang (hoặc là phụ đề mặc định). */
+data class SmoothSubtitle(val url: String, val label: String, val language: String?, val on: Boolean) {
+    /** MIME theo đuôi file: .srt → SubRip, còn lại (đa số) WebVTT. */
+    val isSrt: Boolean get() = url.substringBefore('?').endsWith(".srt", ignoreCase = true)
 }
 
 /** Kết quả trình phát mượt trả về trang. */

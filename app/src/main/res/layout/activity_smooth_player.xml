@@ -20,6 +20,25 @@
         android:layout_gravity="center"
         android:indeterminateTint="@color/accent" />
 
+    <!-- Phụ đề rời của trang (WebVTT / SRT) — nâng lên khi thanh điều khiển hiện -->
+    <TextView
+        android:id="@+id/player_subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="96dp"
+        android:layout_marginEnd="96dp"
+        android:layout_marginBottom="44dp"
+        android:gravity="center"
+        android:shadowColor="#FF000000"
+        android:shadowDx="0"
+        android:shadowDy="2"
+        android:shadowRadius="6"
+        android:textColor="#FFFFFFFF"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <!-- Tua: "+0:30 · 12:40 / 45:12" giữa màn hình khi giữ ◀▶ -->
     <TextView
         android:id="@+id/player_seek"

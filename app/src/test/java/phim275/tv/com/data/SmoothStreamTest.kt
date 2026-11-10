@@ -64,6 +64,22 @@ class SmoothStreamTest {
     }
 
     @Test
+    fun parsesSubtitleFilesAndKeepsPlayerEligible() {
+        val s = SmoothStream.parse(
+            reply(
+                """{"url":"https://x/a.m3u8","kind":"hls"}""",
+                """{"subs":1,"subtitles":[{"url":"https://s/vie.vtt","label":"Tiếng Việt","lang":"","on":true},{"url":"https://s/eng.srt?x=1","label":"English","on":false},{"url":"blob:x","label":"bad"}]}""",
+            ),
+        )!!
+        assertEquals(listOf("Tiếng Việt", "English"), s.subtitles.map { it.label })
+        assertTrue(s.subtitles[0].on)
+        assertFalse(s.subtitles[0].isSrt)
+        assertTrue(s.subtitles[1].isSrt)
+        assertNull(s.subtitles[0].language)
+        assertFalse(s.hasSubtitles) // có file phụ đề → trình phát mượt hiện được, không cần giữ trình phát của trang
+    }
+
+    @Test
     fun liveStreamHasNoDuration() {
         val s = SmoothStream.parse(reply("""{"url":"https://x/live.m3u8","kind":"hls"}""", """{"time":12,"duration":0}"""))!!
         assertEquals(0.0, s.durationSec, 0.0)
