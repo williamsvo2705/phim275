@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Trình phát mượt: video (SurfaceView → lớp video phần cứng của TV), thanh điều khiển, bảng tùy chọn. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/player_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF000000">
+
+    <SurfaceView
+        android:id="@+id/player_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <ProgressBar
+        android:id="@+id/player_loading"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:indeterminateTint="@color/accent" />
+
+    <!-- Tua: "+0:30 · 12:40 / 45:12" giữa màn hình khi giữ ◀▶ -->
+    <TextView
+        android:id="@+id/player_seek"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/snackbar_bg"
+        android:paddingStart="24dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="12dp"
+        android:textColor="@color/text"
+        android:textSize="@dimen/text_display"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/player_osd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/player_osd_bg"
+        android:orientation="vertical"
+        android:paddingStart="48dp"
+        android:paddingTop="72dp"
+        android:paddingEnd="48dp"
+        android:paddingBottom="28dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text"
+            android:textSize="@dimen/text_title"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/player_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="12dp"
+            android:max="1000"
+            android:progressDrawable="@drawable/next_card_progress" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/player_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text"
+                android:textSize="@dimen/text_body"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/player_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:text="TRÌNH PHÁT MƯỢT"
+                android:letterSpacing="0.1"
+                android:textColor="@color/ok"
+                android:textSize="@dimen/text_caption"
+                android:textStyle="bold" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/player_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="OK: phát / dừng · ◀▶: tua · ▼: tùy chọn · Back: về trang"
+                android:textColor="@color/text_dim"
+                android:textSize="@dimen/text_body" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bảng tùy chọn (tốc độ, chất lượng, trình phát của trang) bên phải -->
+    <LinearLayout
+        android:id="@+id/player_menu"
+        android:layout_width="@dimen/panel_width"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="@drawable/panel_bg"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="32dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="20dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/player_menu_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginBottom="16dp"
+            android:textColor="@color/text"
+            android:textSize="@dimen/text_display"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/player_menu_items"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/player_toast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="40dp"
+        android:background="@drawable/snackbar_bg"
+        android:paddingStart="22dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="22dp"
+        android:paddingBottom="10dp"
+        android:textColor="@color/text"
+        android:textSize="@dimen/text_body"
+        android:visibility="gone" />
+</FrameLayout>

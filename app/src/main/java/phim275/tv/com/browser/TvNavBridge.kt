@@ -47,7 +47,16 @@ object TvNavBridge {
      * Tùy chọn video: [cmd] = "info" | "rate" (value = tốc độ) | "level" (value = chỉ số chất lượng).
      * [callback] (main thread) nhận trạng thái trình phát sau khi đổi, hoặc null nếu trang không có video / chưa sẵn sàng.
      */
-    fun video(cmd: String, value: Any? = null, callback: (JSONObject?) -> Unit) {
+    fun video(cmd: String, value: Any? = null, callback: (JSONObject?) -> Unit) =
+        request(JSONObject().put("type", "video").put("cmd", cmd).put("value", value ?: JSONObject.NULL), callback)
+
+    /**
+     * Luồng của video chính trong tab đang xem (playlist HLS / file video + header trang đã gửi) cho trình phát mượt:
+     * `{ stream: { url, kind, referer, origin, ua }, video: { time, duration, … } }`, hoặc null nếu chưa thấy luồng.
+     */
+    fun stream(callback: (JSONObject?) -> Unit) = request(JSONObject().put("type", "stream"), callback)
+
+    private fun request(message: JSONObject, callback: (JSONObject?) -> Unit) {
         val p = port
         if (p == null) {
             callback(null)
@@ -57,7 +66,7 @@ object TvNavBridge {
         pending[id] = callback
         main.postDelayed({ pending.remove(id)?.invoke(null) }, TIMEOUT_MS)
         try {
-            p.postMessage(JSONObject().put("id", id).put("type", "video").put("cmd", cmd).put("value", value ?: JSONObject.NULL))
+            p.postMessage(message.put("id", id))
         } catch (e: Exception) {
             Log.w(TAG, "postMessage lỗi", e)
             pending.remove(id)?.invoke(null)

@@ -123,9 +123,34 @@
             } catch { }
             return null;
         }
+        /** URL luồng trình phát đang phát (JW Player / hls.js / thẻ video) — cho trình phát mượt của app. */
+        function mediaSrc(v) {
+            const abs = u => { try { return new URL(u, location.href).href; } catch { return ''; } };
+            const p = jw();
+            if ( p !== null ) {
+                try {
+                    const it = p.getPlaylistItem() || {};
+                    const f = it.file || (it.sources && it.sources[0] && it.sources[0].file);
+                    if ( typeof f === 'string' && f !== '' && !f.startsWith('blob:') ) { return abs(f); }
+                } catch { }
+            }
+            const h = hls();
+            if ( h !== null && typeof h.url === 'string' && /^https?:/.test(h.url) ) { return h.url; }
+            const s = v.currentSrc || '';
+            return /^https?:/.test(s) ? s : '';
+        }
+        /** Số phụ đề rời đang hiện (trình phát mượt không hiện được phụ đề của trang). */
+        function subtitlesShown(v) {
+            let n = 0;
+            try { for ( const t of v.textTracks || [] ) { if ( t.mode === 'showing' ) { n++; } } } catch { }
+            const p = jw();
+            try { if ( p !== null && Number(p.getCurrentCaptions()) > 0 ) { n++; } } catch { }
+            return n;
+        }
         function info(v) {
             const out = { engine: 'html5', rate: v.playbackRate, levels: [], level: -1, height: v.videoHeight || 0,
-                time: v.currentTime, duration: Number.isFinite(v.duration) ? v.duration : 0 };
+                time: v.currentTime, duration: Number.isFinite(v.duration) ? v.duration : 0,
+                paused: v.paused, frame: location.href.split('#')[0], src: mediaSrc(v), subs: subtitlesShown(v) };
             const p = jw();
             if ( p !== null ) {
                 try {
@@ -167,6 +192,14 @@
                 const target = msg.cmd === 'seekBy' ? v.currentTime + value : d * value;
                 v.currentTime = Math.max(0, d > 0 ? Math.min(d - 1, target) : target);
                 return Promise.resolve({ engine: 'html5', rate: v.playbackRate, time: v.currentTime, duration: d });
+            }
+            if ( msg.cmd === 'pause' ) {
+                v.pause();
+                return Promise.resolve(info(v));
+            }
+            if ( msg.cmd === 'play' ) {
+                v.play().catch(( ) => {});
+                return Promise.resolve(info(v));
             }
             if ( msg.cmd === 'rate' && value > 0 && value <= 4 ) {
                 const p = jw();

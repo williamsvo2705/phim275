@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 
 /**
@@ -23,11 +25,14 @@ class RestartActivity : Activity() {
             ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         if (launch != null) startActivity(launch)
         finish()
-        Runtime.getRuntime().exit(0)
+        // Không tắt process ngay: nếu nó chết giữa lúc chuyển cảnh, máy chiếu JMGO (Google TV) coi như app
+        // vừa đóng và tự mở lại màn hình chính đè lên Phim275 mới mở. Đợi MainActivity hiện hẳn rồi mới thoát.
+        Handler(Looper.getMainLooper()).postDelayed({ Runtime.getRuntime().exit(0) }, EXIT_DELAY_MS)
     }
 
     companion object {
         private const val EXTRA_PID = "phim275.restart.pid"
+        private const val EXIT_DELAY_MS = 5_000L
 
         /** Gọi từ process chính: mở activity trung gian rồi tắt process hiện tại. */
         fun restart(context: Context) {

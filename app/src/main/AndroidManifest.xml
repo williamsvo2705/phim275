@@ -49,6 +49,13 @@
         </activity>
 
         <!-- Khởi động lại app (process riêng, không giao diện) — xem RestartActivity. -->
+        <!-- Trình phát mượt: phát luồng của trang bằng ExoPlayer (lớp video phần cứng) khi xem toàn màn hình. -->
+        <activity
+            android:name=".player.SmoothPlayerActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
         <activity
             android:name=".RestartActivity"
             android:excludeFromRecents="true"

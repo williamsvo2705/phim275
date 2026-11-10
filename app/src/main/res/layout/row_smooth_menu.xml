@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Một dòng trong bảng tùy chọn của trình phát mượt (cùng kiểu với bảng menu của app). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/panel_row"
+    android:background="@drawable/panel_row_bg"
+    android:focusable="true"
+    android:clickable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="20dp"
+    android:paddingEnd="16dp">
+
+    <TextView
+        android:id="@+id/row_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text"
+        android:textSize="@dimen/text_body" />
+
+    <TextView
+        android:id="@+id/row_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/chip_bg"
+        android:maxLines="1"
+        android:paddingStart="10dp"
+        android:paddingTop="3dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="3dp"
+        android:textColor="@color/text_dim"
+        android:textSize="@dimen/text_caption" />
+</LinearLayout>

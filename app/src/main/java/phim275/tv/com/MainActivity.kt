@@ -86,6 +86,9 @@ import phim275.tv.com.data.SavedTab
 import phim275.tv.com.data.SearchEngine
 import phim275.tv.com.data.SessionCodec
 import phim275.tv.com.data.SessionStore
+import phim275.tv.com.data.SmoothResult
+import phim275.tv.com.data.SmoothStream
+import phim275.tv.com.player.SmoothPlayerActivity
 import org.mozilla.geckoview.MediaSession
 import phim275.tv.com.diag.CrashLog
 import phim275.tv.com.diag.Diagnostics
@@ -255,6 +258,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             if (on) {
                 enterPageMode()
                 hintVideoOptions()
+                maybeOpenSmoothPlayer()
             }
         }
         TvNavBridge.playbackListener = ::onPlaybackPosition
@@ -360,6 +364,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         if (requestCode == REQ_VOICE && resultCode == RESULT_OK) {
             data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { navigate(it) }
         }
+        if (requestCode == REQ_SMOOTH) onSmoothPlayerResult(data)
     }
 
     // ───────────────────────────── Tab & phiên duyệt web ─────────────────────────────
@@ -640,6 +645,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
             if (fullScreen) {
                 enterPageMode()
                 hintVideoOptions()
+                maybeOpenSmoothPlayer()
             }
         }
 
@@ -1106,6 +1112,11 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
                     },
                 )),
                 PanelSection("Xem phim", listOf(
+                    PanelItem("Trình phát mượt khi xem toàn màn hình", R.drawable.ic_tune, on = settings.smoothPlayer, keepOpen = true) {
+                        settings.smoothPlayer = !settings.smoothPlayer
+                        if (settings.smoothPlayer) settings.smoothFailedHosts = emptySet() // bật lại → thử lại mọi trang
+                        panel.refresh()
+                    },
                     PanelItem("Tự chuyển tập khi hết phim", R.drawable.ic_forward, on = settings.autoNextEpisode, keepOpen = true) {
                         settings.autoNextEpisode = !settings.autoNextEpisode
                         panel.refresh()
@@ -1303,6 +1314,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     private fun videoOptionItems(): List<PanelItem> {
         val items = mutableListOf<PanelItem>()
+        items += PanelItem("Xem bằng trình phát mượt", R.drawable.ic_tune, value = "hình đều, không giật") {
+            panel.hide()
+            maybeOpenSmoothPlayer(force = true)
+        }
         if (videoSources.isNotEmpty()) {
             // Server / bản dịch của trang: đổi xong trình phát dựng lại → đóng bảng để xem.
             items += PanelItem("Nguồn phát / bản dịch", R.drawable.ic_open, value = PlayerOptions.sourcesSummary(videoSources)) {
@@ -1358,6 +1373,77 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         if (shown >= VIDEO_HINT_TIMES) return
         settings.videoOptionsHints = shown + 1
         showToast(if (isCursorMode()) "Menu: tốc độ, chất lượng video" else "▼ hoặc Menu: tốc độ, chất lượng video")
+    }
+
+    // ───────────────────────────── Trình phát mượt ─────────────────────────────
+
+    /** Vị trí video web lúc chuyển sang trình phát mượt (web dừng ở đó) — để tua web cho khớp khi quay lại. */
+    private var smoothWebSec = 0.0
+    private var smoothPage: String? = null
+    private var smoothReturnedAtMs = 0L
+
+    /**
+     * Vào toàn màn hình: nếu bật trình phát mượt và trang có luồng phát được → chuyển video sang ExoPlayer
+     * (nhịp hình đều trên TV 60Hz). Trình phát của trang có thể chưa tải playlist ngay lúc đó → thử lại vài lần.
+     * [force] = người xem chọn trong bảng Tùy chọn video (kể cả khi tắt trong Cài đặt / trang từng lỗi).
+     */
+    private fun maybeOpenSmoothPlayer(force: Boolean = false, attempt: Int = 0) {
+        if (!force && !settings.smoothPlayer) return
+        if (!force && SystemClock.uptimeMillis() - smoothReturnedAtMs < SMOOTH_COOLDOWN_MS) return
+        if (smoothPage != null) return // đang mở
+        val page = currentUrl ?: return
+        if (!force && Uri.parse(page).host.orEmpty() in settings.smoothFailedHosts) return
+        TvNavBridge.stream { json ->
+            val stream = SmoothStream.parse(json)
+            if (stream == null) {
+                if (force) {
+                    showToast("Chưa thấy luồng video của trang · cho phim chạy vài giây rồi thử lại")
+                } else if (attempt < SMOOTH_RETRIES && isAnyFullscreen()) {
+                    handler.postDelayed({ maybeOpenSmoothPlayer(false, attempt + 1) }, SMOOTH_RETRY_MS)
+                }
+                return@stream
+            }
+            if ((!force && !isAnyFullscreen()) || currentUrl != page || isFinishing || smoothPage != null) return@stream
+            if (stream.hasSubtitles && !force) return@stream // giữ phụ đề của trang
+            if (stream.hasSubtitles) showToast("Trình phát mượt không hiện được phụ đề của trang")
+            TvNavBridge.video("pause") {}
+            smoothWebSec = stream.positionSec
+            smoothPage = page
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                SmoothPlayerActivity.intent(this, stream, currentTab?.title, GeckoSession.getDefaultUserAgent()),
+                REQ_SMOOTH,
+            )
+        }
+    }
+
+    private fun onSmoothPlayerResult(data: Intent?) {
+        smoothReturnedAtMs = SystemClock.uptimeMillis()
+        val page = smoothPage ?: return
+        smoothPage = null
+        val code = data?.getIntExtra(SmoothPlayerActivity.EXTRA_RESULT, SmoothResult.BACK) ?: SmoothResult.BACK
+        val pos = data?.getDoubleExtra(SmoothPlayerActivity.EXTRA_POSITION_SEC, smoothWebSec) ?: smoothWebSec
+        val dur = data?.getDoubleExtra(SmoothPlayerActivity.EXTRA_DURATION_SEC, 0.0) ?: 0.0
+        if (currentUrl != page) return // đã đổi tab / trang trong lúc xem
+        if (dur > 0 && LinkStore.isRecordable(page)) playback.record(page, pos, dur, true)
+        val delta = SmoothResult.seekDelta(smoothWebSec, pos)
+        when (code) {
+            SmoothResult.ENDED -> {
+                exitAnyFullscreen()
+                onPlaybackPosition(page, dur, dur, flush = true, ended = true) // thẻ "Tập tiếp theo", tự chuyển tập
+            }
+            SmoothResult.USE_WEB, SmoothResult.ERROR -> {
+                if (code == SmoothResult.ERROR) {
+                    settings.smoothFailedHosts = settings.smoothFailedHosts + Uri.parse(page).host.orEmpty()
+                    showToast("Trình phát mượt không phát được trang này · dùng trình phát của trang")
+                }
+                TvNavBridge.video("seekBy", delta) { TvNavBridge.video("play") {} }
+            }
+            else -> { // Back: về trang, dừng ở chỗ vừa xem
+                TvNavBridge.video("seekBy", delta) {}
+                exitAnyFullscreen()
+            }
+        }
     }
 
     // ───────────────────────────── Tập tiếp theo ─────────────────────────────
@@ -2142,6 +2228,10 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         const val ABOUT_URL = "resource://android/assets/home/about.html"
         const val REPORT_URL = "https://phim275.vercel.app/report"
         private const val REQ_VOICE = 1001
+        private const val REQ_SMOOTH = 1002
+        private const val SMOOTH_RETRIES = 4
+        private const val SMOOTH_RETRY_MS = 1_500L
+        private const val SMOOTH_COOLDOWN_MS = 4_000L
         private const val IME_CHECK_MS = 700L
         private const val DOUBLE_PRESS_MS = 450L
         private const val BLOCK_MENU_TIMEOUT_MS = 600L

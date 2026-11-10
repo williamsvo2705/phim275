@@ -97,8 +97,26 @@ object BrowserRuntime {
     var isLowRam: Boolean = false
         private set
 
+    /**
+     * Pref Gecko thêm để chẩn đoán trên máy thật (bản release không có about:config): mỗi dòng `tên.pref: giá trị`
+     * trong Android/data/phim275.tv.com/files/gecko-prefs.yaml — chỉ app và `adb shell` ghi được thư mục này.
+     */
+    private fun extraPrefs(appContext: Context): Map<String, String> {
+        val file = appContext.getExternalFilesDir(null)?.let { java.io.File(it, "gecko-prefs.yaml") } ?: return emptyMap()
+        if (!file.isFile) return emptyMap()
+        return try {
+            file.readLines().mapNotNull { line ->
+                EXTRA_PREF_LINE.matchEntire(line.trim())?.let { it.groupValues[1] to it.groupValues[2] }
+            }.toMap().also { if (it.isNotEmpty()) android.util.Log.i("Phim275Runtime", "Pref Gecko thêm: $it") }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private val EXTRA_PREF_LINE = Regex("""([a-z0-9_.\-]+):\s*(-?\d+|true|false|"[^"]*")""")
+
     private fun writeGeckoConfig(appContext: Context, lowRam: Boolean): String {
-        val prefs = if (lowRam) LOW_MEMORY_PREFS + TINY_RAM_PREFS else LOW_MEMORY_PREFS
+        val prefs = (if (lowRam) LOW_MEMORY_PREFS + TINY_RAM_PREFS else LOW_MEMORY_PREFS) + extraPrefs(appContext)
         val yaml = buildString {
             appendLine("prefs:")
             prefs.forEach { (k, v) -> appendLine("  $k: $v") }
