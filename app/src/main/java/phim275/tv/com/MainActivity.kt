@@ -61,6 +61,7 @@ import phim275.tv.com.browser.BrowserRuntime.UblockState
 import phim275.tv.com.browser.BrowserTab
 import phim275.tv.com.browser.ErrorPages
 import phim275.tv.com.browser.MediaKeys
+import phim275.tv.com.browser.RenderThreadBoost
 import phim275.tv.com.browser.SitePolicy
 import phim275.tv.com.browser.TabManager
 import phim275.tv.com.browser.TabPolicy
@@ -296,6 +297,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     private val mediaSessionDelegate = object : MediaSession.Delegate {
         override fun onPlay(session: GeckoSession, mediaSession: MediaSession) {
             if (tabs.isCurrent(session)) keepScreenOn(true)
+            RenderThreadBoost.boost() // luồng vẽ của Gecko ưu tiên ngang JS của trang → khung hình đều hơn
         }
 
         override fun onPause(session: GeckoSession, mediaSession: MediaSession) {
@@ -319,6 +321,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     override fun onResume() {
         super.onResume()
         currentSession?.setActive(true)
+        handler.postDelayed({ RenderThreadBoost.boost() }, BOOST_DELAY_MS) // luồng vẽ tạo sau khi trang đầu tiên hiện
     }
 
     override fun onPause() {
@@ -1205,12 +1208,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
     /** Mở lại app (GeckoRuntime chỉ đọc cấu hình lúc khởi động). Tab được khôi phục nhờ SessionStore. */
     private fun restartApp() {
         saveSession()
-        val intent = packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-        val pending = android.app.PendingIntent.getActivity(this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE)
-        getSystemService(android.app.AlarmManager::class.java)
-            .set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 400, pending)
-        finishAffinity()
-        Runtime.getRuntime().exit(0)
+        RestartActivity.restart(this)
     }
 
     private fun clearBrowsingData() {
@@ -1355,6 +1353,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
 
     /** Vài lần đầu vào toàn màn hình: nhắc cách mở tùy chọn video. */
     private fun hintVideoOptions() {
+        RenderThreadBoost.boost()
         val shown = settings.videoOptionsHints
         if (shown >= VIDEO_HINT_TIMES) return
         settings.videoOptionsHints = shown + 1
@@ -2163,6 +2162,7 @@ class MainActivity : Activity(), CursorController.Callbacks, TabManager.Listener
         private const val MAX_NEXT_EPISODES = 20
         private const val VIDEO_HINT_TIMES = 5
         private const val SEEK_FLUSH_MS = 300L
+        private const val BOOST_DELAY_MS = 5000L
         private const val RESUME_AFTER_KILL_WINDOW_MS = 15_000L
         private const val FORCE_RESUME_WINDOW_MS = 30_000L
         private const val NEXT_TICK_MS = 100L

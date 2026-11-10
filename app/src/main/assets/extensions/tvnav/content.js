@@ -48,7 +48,14 @@
         const top = window === window.top ? location.href : null;
         const send = (msg) => { browser.runtime.sendMessage(Object.assign({ top }, msg)).catch(( ) => {}); };
         function report(v, flush) {
-            if ( isMain(v) && v.currentTime > 0 ) { send({ type: 'mediaPos', t: v.currentTime, d: v.duration, flush }); }
+            if ( !isMain(v) || v.currentTime <= 0 ) { return; }
+            // Số khung hình đã hiện / bị bỏ (đo độ mượt trên box yếu; app ghi log mỗi 30 giây).
+            let tf = -1, df = -1;
+            try {
+                const q = v.getVideoPlaybackQuality();
+                tf = q.totalVideoFrames; df = q.droppedVideoFrames;
+            } catch { }
+            send({ type: 'mediaPos', t: v.currentTime, d: v.duration, flush, tf, df });
         }
         function maybeResume(v) {
             if ( asked.has(v) || !isMain(v) ) { return; }

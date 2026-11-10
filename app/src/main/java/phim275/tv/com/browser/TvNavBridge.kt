@@ -89,6 +89,31 @@ object TvNavBridge {
         )
     }
 
+    // Độ mượt video: số khung bị bỏ trong mỗi ~30 giây (đọc bằng `adb logcat -s Phim275TvNav`).
+    private var statsAtMs = 0L
+    private var statsTotal = 0L
+    private var statsDropped = 0L
+
+    private fun logFrameStats(total: Long, dropped: Long) {
+        if (total < 0 || dropped < 0) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (total < statsTotal) { // video mới → đếm lại
+            statsTotal = 0
+            statsDropped = 0
+            statsAtMs = now
+        }
+        if (now - statsAtMs < 30_000) return
+        val dt = total - statsTotal
+        val dd = dropped - statsDropped
+        if (dt > 0) {
+            Log.i(TAG, "Khung hình video: %d hiện, %d bỏ (%.1f%%) trong %.0f giây · tổng %d/%d".format(
+                dt, dd, 100.0 * dd / (dt + dd), (now - statsAtMs) / 1000.0, dropped, total))
+        }
+        statsAtMs = now
+        statsTotal = total
+        statsDropped = dropped
+    }
+
     private val delegate = object : WebExtension.MessageDelegate {
         override fun onConnect(newPort: WebExtension.Port) {
             port = newPort
@@ -105,6 +130,7 @@ object TvNavBridge {
                 val ended = json.optBoolean("ended")
                 if (t.isNaN() || d.isNaN()) return GeckoResult.fromValue(false)
                 if (flush) Log.i(TAG, "Vị trí video %.0f/%.0f giây%s (%s)".format(t, d, if (ended) ", hết phim" else "", page ?: "tab hiện tại"))
+                logFrameStats(json.optLong("tf", -1), json.optLong("df", -1))
                 main.post { playbackListener?.invoke(page, t, d, flush, ended) }
                 return GeckoResult.fromValue(true)
             }

@@ -5,7 +5,7 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 
 **Tải về:** https://phim275.vercel.app (trên TV: app *Downloader* → gõ `phim275.vercel.app/tv`)
 
-> Trạng thái: **0.15.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
+> Trạng thái: **0.16.0** — đủ tính năng chính, đã chạy trên máy thật (máy chiếu OnePlus H93A, Android 14, 1,6GB RAM).
 
 ## Tính năng
 
@@ -27,7 +27,8 @@ Trình duyệt cho **Android TV / máy chiếu / TV box**: chặn quảng cáo v
 | Báo lỗi | Menu → Báo trang lỗi → mã QR mở GitHub Issue điền sẵn (quét bằng điện thoại) · ghi log crash |
 | Tự cập nhật | Kiểm tra `latest.json` mỗi ngày → tải, kiểm SHA-256, cài bằng PackageInstaller |
 | Khôi phục | Mở lại các tab lần trước khi khởi động (sau cập nhật / khi Android đóng app vì thiếu RAM) |
-| Box 1GB (chế độ RAM thấp) | Tự bật khi máy < 1,5GB RAM (hoặc bật tay): bộ lọc gọn 9 danh sách, bỏ lọc ẩn phần tử chung, uBO + GPU chung process chính, cache ảnh 48MB, tối đa 3 tab · đo trên emulator 1GB: 505MB → 326MB · xem phim lâu: giới hạn bộ đệm video MSE (40MB, máy thường 80MB) nên RAM không tăng dần — process trang sau 5 phút 281MB → 209MB |
+| Box 1GB (chế độ RAM thấp) | Tự bật khi máy < 1,5GB RAM (hoặc bật tay): bộ lọc gọn 9 danh sách, bỏ lọc ẩn phần tử chung, uBO chung process chính, cache ảnh 48MB, tối đa 3 tab · đo trên emulator 1GB: 505MB → 326MB · xem phim lâu: giới hạn bộ đệm video MSE (40MB, máy thường 80MB) nên RAM không tăng dần — process trang sau 5 phút 281MB → 209MB |
+| Xem mượt | Gộp bộ vẽ (process GPU) vào process chính: bớt ~200MB RAM · luồng vẽ của Gecko được ưu tiên ngang luồng giao diện (nice −10) khi phát video / vào toàn màn hình · đo trên máy chiếu H93A, Cobephim toàn màn hình: khung trễ 60–100ms giảm từ 3–11 xuống 0–3 mỗi ~5 giây, 0 khung bị bỏ · nhật ký số khung hiện/bỏ mỗi 30 giây (`adb logcat -s Phim275TvNav`) |
 | RAM thấp | Tắt Fission & process dự phòng, uBO chạy process riêng, giải phóng tab nền khi thiếu RAM, tự khôi phục tab bị giết · đang xem phim mà trang bị Android đóng vì thiếu RAM → tự mở lại, tua về chỗ cũ, phát tiếp (giữ toàn màn hình) |
 
 Đo trên emulator Android TV 2GB RAM, bản release, trang 24h.com.vn: **~630MB** tổng RAM của app ·

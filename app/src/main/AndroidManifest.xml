@@ -48,6 +48,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Khởi động lại app (process riêng, không giao diện) — xem RestartActivity. -->
+        <activity
+            android:name=".RestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".update.InstallResultReceiver"
             android:exported="false" />

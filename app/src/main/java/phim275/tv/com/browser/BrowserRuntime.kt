@@ -71,6 +71,9 @@ object BrowserRuntime {
         // (cả đoạn đã xem) trong process trang → xem lâu là RAM tăng dần. 80MB vẫn dư cho 1080p.
         "media.mediasource.eviction_threshold.video" to (80L * 1024 * 1024).toString(),
         "media.mediasource.eviction_threshold.audio" to (12L * 1024 * 1024).toString(),
+        // Gộp compositor (WebRender) vào process chính thay vì process GPU riêng: bớt ~200MB trên máy chiếu
+        // 1,6GB và app nâng được ưu tiên luồng vẽ (RenderThreadBoost) → khung hình video đều hơn.
+        "layers.gpu-process.enabled" to "false",
         // Không đoán trước / tải trước các trang có thể mở (tốn mạng, CPU, RAM trên máy yếu).
         "network.predictor.enabled" to "false",
         "network.prefetch-next" to "false",
@@ -88,7 +91,6 @@ object BrowserRuntime {
         "javascript.options.mem.gc_incremental_slice_ms" to "10",
         "image.mem.decode_bytes_at_a_time" to "65536",       // giải mã ảnh từng phần nhỏ
         "layout.css.prefers-reduced-motion" to "1",          // bớt hiệu ứng chuyển động
-        "layers.gpu-process.enabled" to "false",             // gộp compositor vào process chính (bớt ~40–70MB)
     )
 
     @Volatile
